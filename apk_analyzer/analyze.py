@@ -10,12 +10,14 @@ Pure Python implementation - no external tools (apktool/jadx) required.
 
 Usage:
     python analyze.py <path-to.apk> [-o output_dir] [--format json|txt|html|all]
+    python analyze.py <path-to.apk> --web --format all
 
 Output:
     <output_dir>/
     ├── report.json
     ├── report.txt
     ├── report.html
+    ├── web_recon.txt        (when --web is used)
     ├── frida_hooks/
     │   ├── ssl_bypass.js
     │   ├── crypto_hook.js
@@ -31,12 +33,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html as html_module
+import http.client
 import json
 import os
 import re
+import socket
+import ssl
 import struct
 import sys
 import time
+import urllib.parse
+import urllib.request
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
@@ -2612,6 +2619,685 @@ class APKEliteAnalyzer:
 
 
 # ===========================================================================
+# WEB RECONNAISSANCE MODULE
+# ===========================================================================
+
+# Security headers to check for
+SECURITY_HEADERS = [
+    "Strict-Transport-Security",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "Content-Security-Policy",
+    "X-XSS-Protection",
+]
+
+# Common sensitive paths to probe
+SENSITIVE_PATHS = [
+    "/robots.txt",
+    "/sitemap.xml",
+    "/.env",
+    "/.git/HEAD",
+    "/admin",
+    "/api/docs",
+    "/swagger",
+    "/swagger-ui.html",
+    "/api/swagger.json",
+    "/.well-known/security.txt",
+]
+
+WEB_RECON_UA = "Mozilla/5.0 (compatible; SecurityResearch/1.0)"
+WEB_RECON_TIMEOUT = 5
+WEB_RECON_DELAY = 1.5
+
+
+@dataclass
+class DomainReconResult:
+    """Results for a single domain's passive web recon."""
+    domain: str
+    urls: List[str] = field(default_factory=list)
+    category: str = "unknown"
+    reachable: bool = False
+    status_code: int = 0
+    # Security headers
+    headers_present: List[str] = field(default_factory=list)
+    headers_missing: List[str] = field(default_factory=list)
+    security_score: str = "N/A"
+    server_header: str = ""
+    powered_by: str = ""
+    technology_stack: List[str] = field(default_factory=list)
+    # Cookie analysis
+    cookies_without_httponly: List[str] = field(default_factory=list)
+    cookies_without_secure: List[str] = field(default_factory=list)
+    cookies_without_samesite: List[str] = field(default_factory=list)
+    # SSL/TLS
+    ssl_issuer: str = ""
+    ssl_subject: str = ""
+    ssl_expiry: str = ""
+    ssl_san_domains: List[str] = field(default_factory=list)
+    ssl_protocol: str = ""
+    ssl_error: str = ""
+    # CORS
+    cors_misconfigured: bool = False
+    cors_details: str = ""
+    # Discovered content
+    robots_txt: str = ""
+    sitemap_urls: List[str] = field(default_factory=list)
+    sensitive_paths_found: List[str] = field(default_factory=list)
+    js_files: List[str] = field(default_factory=list)
+    api_endpoints: List[str] = field(default_factory=list)
+    # Subdomains from CT logs
+    ct_subdomains: List[str] = field(default_factory=list)
+    # Open redirect indicators
+    open_redirect_params: List[str] = field(default_factory=list)
+    # Errors
+    errors: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+class WebRecon:
+    """Passive web reconnaissance on URLs/domains discovered during APK analysis."""
+
+    REDIRECT_PARAMS = ["url", "redirect", "next", "return", "redir",
+                       "returnUrl", "redirect_uri", "callback", "goto",
+                       "target", "link", "dest", "destination"]
+
+    def __init__(self, urls: List[str], quiet: bool = False):
+        self.raw_urls = urls
+        self.quiet = quiet
+        self.domains: Dict[str, List[str]] = defaultdict(list)  # domain -> [urls]
+        self.results: List[DomainReconResult] = []
+        self._categorize_urls()
+
+    def _categorize_urls(self):
+        """Extract base domains and categorize URLs."""
+        for url in self.raw_urls:
+            try:
+                parsed = urllib.parse.urlparse(url)
+                host = parsed.hostname
+                if not host:
+                    continue
+                # Skip IP addresses and localhost
+                if host in ("localhost", "127.0.0.1", "0.0.0.0"):
+                    continue
+                self.domains[host].append(url)
+            except Exception:
+                continue
+
+    def _get_category(self, domain: str, urls: List[str]) -> str:
+        """Categorize a domain based on its URLs."""
+        joined = " ".join(urls).lower()
+        if any(k in domain.lower() for k in ("cdn", "static", "assets", "media")):
+            return "CDN"
+        if any(k in joined for k in ("/api/", "/v1/", "/v2/", "/graphql")):
+            return "API"
+        if any(k in domain.lower() for k in ("staging", "dev", "test", "internal", "local")):
+            return "Internal/Staging"
+        if any(k in domain.lower() for k in ("firebase", "amazonaws", "cloudfront")):
+            return "Cloud Service"
+        return "Web"
+
+    def run(self) -> List[DomainReconResult]:
+        """Run passive recon on all discovered domains."""
+        if not self.quiet:
+            print(f"\n{C_CYN}[*] Web Reconnaissance: {len(self.domains)} domains to analyze{C_RST}")
+
+        for i, (domain, urls) in enumerate(list(self.domains.items())[:30]):
+            if not self.quiet:
+                print(f"  {C_CYN}[{i+1}/{min(len(self.domains), 30)}] Scanning: {domain}{C_RST}")
+
+            result = DomainReconResult(
+                domain=domain,
+                urls=urls[:20],
+                category=self._get_category(domain, urls),
+            )
+
+            # Check for open redirect indicators in URLs
+            self._check_open_redirect_params(result, urls)
+
+            # SSL/TLS certificate info
+            self._check_ssl_cert(result)
+
+            # HTTP headers and security analysis
+            self._check_http_headers(result)
+
+            # Check CORS
+            self._check_cors(result)
+
+            # Fetch robots.txt and sitemap
+            self._fetch_robots_txt(result)
+
+            # Check sensitive paths
+            self._check_sensitive_paths(result)
+
+            # CT log subdomain discovery
+            self._check_ct_logs(result)
+
+            # Extract JS files and API endpoints from HTML
+            self._extract_js_and_apis(result)
+
+            # Calculate security score
+            self._calculate_security_score(result)
+
+            self.results.append(result)
+
+            # Rate limiting delay
+            if i < len(self.domains) - 1:
+                time.sleep(WEB_RECON_DELAY)
+
+        return self.results
+
+    def _make_request(self, url: str, headers: Dict[str, str] = None) -> Optional[http.client.HTTPResponse]:
+        """Make a safe HTTP request with timeout."""
+        try:
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", WEB_RECON_UA)
+            if headers:
+                for k, v in headers.items():
+                    req.add_header(k, v)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            response = urllib.request.urlopen(req, timeout=WEB_RECON_TIMEOUT, context=ctx)
+            return response
+        except urllib.error.HTTPError as e:
+            return e
+        except Exception:
+            return None
+
+    def _check_open_redirect_params(self, result: DomainReconResult, urls: List[str]):
+        """Check URLs for open redirect parameter indicators."""
+        for url in urls:
+            try:
+                parsed = urllib.parse.urlparse(url)
+                params = urllib.parse.parse_qs(parsed.query)
+                for param_name in params:
+                    if param_name.lower() in self.REDIRECT_PARAMS:
+                        result.open_redirect_params.append(
+                            f"{param_name} in {url[:100]}"
+                        )
+            except Exception:
+                continue
+
+    def _check_ssl_cert(self, result: DomainReconResult):
+        """Get SSL/TLS certificate information."""
+        try:
+            ctx = ssl.create_default_context()
+            with socket.create_connection((result.domain, 443), timeout=WEB_RECON_TIMEOUT) as sock:
+                with ctx.wrap_socket(sock, server_hostname=result.domain) as ssock:
+                    cert = ssock.getpeercert()
+                    result.ssl_protocol = ssock.version() or ""
+                    if cert:
+                        # Subject
+                        subject = dict(x[0] for x in cert.get("subject", []))
+                        result.ssl_subject = subject.get("commonName", "")
+                        # Issuer
+                        issuer = dict(x[0] for x in cert.get("issuer", []))
+                        result.ssl_issuer = issuer.get("organizationName", issuer.get("commonName", ""))
+                        # Expiry
+                        result.ssl_expiry = cert.get("notAfter", "")
+                        # SAN domains
+                        san = cert.get("subjectAltName", [])
+                        result.ssl_san_domains = [v for t, v in san if t == "DNS"][:20]
+        except ssl.SSLCertVerificationError as e:
+            result.ssl_error = f"Certificate verification failed: {str(e)[:100]}"
+        except (socket.timeout, socket.gaierror, ConnectionRefusedError, OSError) as e:
+            result.ssl_error = f"Connection failed: {type(e).__name__}"
+        except Exception as e:
+            result.ssl_error = f"SSL check error: {type(e).__name__}"
+
+    def _check_http_headers(self, result: DomainReconResult):
+        """Analyze HTTP response headers for security issues."""
+        url = f"https://{result.domain}/"
+        response = self._make_request(url)
+        if response is None:
+            # Try HTTP
+            url = f"http://{result.domain}/"
+            response = self._make_request(url)
+        if response is None:
+            result.errors.append("Could not connect via HTTPS or HTTP")
+            return
+
+        result.reachable = True
+        if hasattr(response, "status"):
+            result.status_code = response.status
+        elif hasattr(response, "code"):
+            result.status_code = response.code
+
+        # Get headers
+        resp_headers = {}
+        if hasattr(response, "headers"):
+            for key in response.headers:
+                resp_headers[key.lower()] = response.headers[key]
+        elif hasattr(response, "getheaders"):
+            for key, val in response.getheaders():
+                resp_headers[key.lower()] = val
+
+        # Check security headers
+        for hdr in SECURITY_HEADERS:
+            if hdr.lower() in resp_headers:
+                result.headers_present.append(hdr)
+            else:
+                result.headers_missing.append(hdr)
+
+        # Server header disclosure
+        if "server" in resp_headers:
+            result.server_header = resp_headers["server"]
+            result.technology_stack.append(f"Server: {resp_headers['server']}")
+
+        # X-Powered-By
+        if "x-powered-by" in resp_headers:
+            result.powered_by = resp_headers["x-powered-by"]
+            result.technology_stack.append(f"Powered-By: {resp_headers['x-powered-by']}")
+
+        # Additional tech detection from headers
+        for hdr_name, hdr_val in resp_headers.items():
+            if "asp.net" in hdr_val.lower():
+                result.technology_stack.append("ASP.NET")
+            if "php" in hdr_val.lower():
+                result.technology_stack.append("PHP")
+            if "express" in hdr_val.lower():
+                result.technology_stack.append("Express.js")
+            if "nginx" in hdr_val.lower() and "nginx" not in str(result.technology_stack):
+                result.technology_stack.append("Nginx")
+            if "apache" in hdr_val.lower() and "apache" not in str(result.technology_stack).lower():
+                result.technology_stack.append("Apache")
+            if "cloudflare" in hdr_val.lower():
+                result.technology_stack.append("Cloudflare")
+
+        # Cookie analysis
+        set_cookies = []
+        if hasattr(response, "headers"):
+            set_cookies = response.headers.get_all("Set-Cookie") or []
+        for cookie_str in set_cookies:
+            cookie_name = cookie_str.split("=")[0].strip() if "=" in cookie_str else cookie_str[:30]
+            lower_cookie = cookie_str.lower()
+            if "httponly" not in lower_cookie:
+                result.cookies_without_httponly.append(cookie_name)
+            if "secure" not in lower_cookie:
+                result.cookies_without_secure.append(cookie_name)
+            if "samesite" not in lower_cookie:
+                result.cookies_without_samesite.append(cookie_name)
+
+    def _check_cors(self, result: DomainReconResult):
+        """Check for CORS misconfiguration (origin reflection)."""
+        url = f"https://{result.domain}/"
+        evil_origin = "https://evil-attacker.com"
+        try:
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", WEB_RECON_UA)
+            req.add_header("Origin", evil_origin)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            response = urllib.request.urlopen(req, timeout=WEB_RECON_TIMEOUT, context=ctx)
+            acao = response.headers.get("Access-Control-Allow-Origin", "")
+            if evil_origin in acao or acao == "*":
+                result.cors_misconfigured = True
+                acac = response.headers.get("Access-Control-Allow-Credentials", "")
+                if acao == "*":
+                    result.cors_details = "Wildcard (*) Access-Control-Allow-Origin"
+                else:
+                    result.cors_details = f"Origin reflected: {acao}"
+                if acac.lower() == "true":
+                    result.cors_details += " WITH credentials allowed (CRITICAL)"
+        except Exception:
+            pass
+
+    def _fetch_robots_txt(self, result: DomainReconResult):
+        """Fetch robots.txt and sitemap.xml (publicly available info)."""
+        # robots.txt
+        url = f"https://{result.domain}/robots.txt"
+        response = self._make_request(url)
+        if response and hasattr(response, "read"):
+            try:
+                status = getattr(response, "status", getattr(response, "code", 0))
+                if status == 200:
+                    content = response.read(10000).decode("utf-8", errors="replace")
+                    result.robots_txt = content[:3000]
+                    # Extract sitemap URLs from robots.txt
+                    for line in content.split("\n"):
+                        if line.lower().startswith("sitemap:"):
+                            sitemap_url = line.split(":", 1)[1].strip()
+                            result.sitemap_urls.append(sitemap_url)
+            except Exception:
+                pass
+
+        # Try sitemap.xml directly if not found in robots.txt
+        if not result.sitemap_urls:
+            url = f"https://{result.domain}/sitemap.xml"
+            response = self._make_request(url)
+            if response and hasattr(response, "read"):
+                try:
+                    status = getattr(response, "status", getattr(response, "code", 0))
+                    if status == 200:
+                        content = response.read(10000).decode("utf-8", errors="replace")
+                        # Extract URLs from sitemap
+                        loc_matches = re.findall(r"<loc>(.*?)</loc>", content)
+                        result.sitemap_urls = loc_matches[:20]
+                except Exception:
+                    pass
+
+    def _check_sensitive_paths(self, result: DomainReconResult):
+        """Check for exposed sensitive paths."""
+        for path in SENSITIVE_PATHS:
+            url = f"https://{result.domain}{path}"
+            try:
+                req = urllib.request.Request(url, method="HEAD")
+                req.add_header("User-Agent", WEB_RECON_UA)
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                response = urllib.request.urlopen(req, timeout=WEB_RECON_TIMEOUT, context=ctx)
+                status = getattr(response, "status", getattr(response, "code", 0))
+                if status in (200, 301, 302, 403):
+                    result.sensitive_paths_found.append(f"{path} (HTTP {status})")
+            except urllib.error.HTTPError as e:
+                if e.code in (200, 301, 302, 403):
+                    result.sensitive_paths_found.append(f"{path} (HTTP {e.code})")
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+    def _check_ct_logs(self, result: DomainReconResult):
+        """Query crt.sh for subdomain discovery via Certificate Transparency."""
+        try:
+            # Use the base domain for CT search
+            parts = result.domain.split(".")
+            if len(parts) >= 2:
+                base_domain = ".".join(parts[-2:])
+            else:
+                base_domain = result.domain
+
+            url = f"https://crt.sh/?q=%.{base_domain}&output=json"
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", WEB_RECON_UA)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            response = urllib.request.urlopen(req, timeout=10, context=ctx)
+            if response:
+                data = response.read(50000).decode("utf-8", errors="replace")
+                entries = json.loads(data)
+                subdomains = set()
+                for entry in entries[:200]:
+                    name = entry.get("name_value", "")
+                    for sub in name.split("\n"):
+                        sub = sub.strip().lower()
+                        if sub and "*" not in sub and sub != base_domain:
+                            subdomains.add(sub)
+                result.ct_subdomains = sorted(subdomains)[:50]
+        except Exception:
+            pass
+
+    def _extract_js_and_apis(self, result: DomainReconResult):
+        """Extract JavaScript file URLs and API endpoints from HTML responses."""
+        if not result.reachable:
+            return
+        url = f"https://{result.domain}/"
+        response = self._make_request(url)
+        if response is None:
+            return
+        try:
+            status = getattr(response, "status", getattr(response, "code", 0))
+            if status != 200:
+                return
+            content = response.read(100000).decode("utf-8", errors="replace")
+
+            # Extract JS file URLs
+            js_pattern = re.compile(r'(?:src|href)\s*=\s*["\']([^"\']*\.js(?:\?[^"\']*)?)["\']', re.IGNORECASE)
+            for m in js_pattern.finditer(content):
+                js_url = m.group(1)
+                if js_url.startswith("//"):
+                    js_url = "https:" + js_url
+                elif js_url.startswith("/"):
+                    js_url = f"https://{result.domain}{js_url}"
+                result.js_files.append(js_url)
+            result.js_files = result.js_files[:30]
+
+            # Extract API-like endpoints from inline scripts and HTML
+            api_pattern = re.compile(r'["\'](/(?:api|v[0-9]|graphql|rest)[^"\'\\]*)["\']')
+            for m in api_pattern.finditer(content):
+                endpoint = m.group(1)
+                if endpoint not in result.api_endpoints:
+                    result.api_endpoints.append(endpoint)
+
+            # Also check for full API URLs
+            api_url_pattern = re.compile(r'["\'](https?://[^"\']*(?:api|v[0-9]|graphql)[^"\'\\]*)["\']')
+            for m in api_url_pattern.finditer(content):
+                endpoint = m.group(1)
+                if endpoint not in result.api_endpoints:
+                    result.api_endpoints.append(endpoint)
+
+            result.api_endpoints = result.api_endpoints[:30]
+
+            # Analyze first JS file for more API endpoints
+            if result.js_files:
+                self._analyze_js_file(result, result.js_files[0])
+
+        except Exception:
+            pass
+
+    def _analyze_js_file(self, result: DomainReconResult, js_url: str):
+        """Analyze a JavaScript file for API endpoints."""
+        response = self._make_request(js_url)
+        if response is None:
+            return
+        try:
+            status = getattr(response, "status", getattr(response, "code", 0))
+            if status != 200:
+                return
+            content = response.read(200000).decode("utf-8", errors="replace")
+            # Look for API paths
+            api_pattern = re.compile(r'["\'](/(?:api|v[0-9]|graphql|rest|auth|user|admin)[^"\'\\]{2,60})["\']')
+            for m in api_pattern.finditer(content):
+                endpoint = m.group(1)
+                if endpoint not in result.api_endpoints:
+                    result.api_endpoints.append(endpoint)
+            result.api_endpoints = result.api_endpoints[:30]
+        except Exception:
+            pass
+
+    def _calculate_security_score(self, result: DomainReconResult):
+        """Calculate a security header score for the domain."""
+        if not result.reachable:
+            result.security_score = "N/A"
+            return
+
+        total_checks = len(SECURITY_HEADERS)
+        present = len(result.headers_present)
+
+        # Deductions
+        deductions = 0
+        if result.cors_misconfigured:
+            deductions += 1
+        if result.cookies_without_httponly:
+            deductions += 0.5
+        if result.cookies_without_secure:
+            deductions += 0.5
+        if result.server_header:
+            deductions += 0.25  # Minor: server disclosure
+        if result.powered_by:
+            deductions += 0.25  # Minor: tech disclosure
+
+        # Calculate score
+        score_raw = (present / total_checks) - (deductions / total_checks * 0.5)
+        score_raw = max(0, min(1, score_raw))
+
+        if score_raw >= 0.95:
+            result.security_score = "A+"
+        elif score_raw >= 0.85:
+            result.security_score = "A"
+        elif score_raw >= 0.70:
+            result.security_score = "B"
+        elif score_raw >= 0.55:
+            result.security_score = "C"
+        elif score_raw >= 0.40:
+            result.security_score = "D"
+        else:
+            result.security_score = "F"
+
+    def get_discovered_urls_summary(self) -> Dict:
+        """Get a summary of discovered URLs without making requests."""
+        summary = {
+            "total_urls": len(self.raw_urls),
+            "total_domains": len(self.domains),
+            "domains": {},
+        }
+        for domain, urls in self.domains.items():
+            summary["domains"][domain] = {
+                "url_count": len(urls),
+                "category": self._get_category(domain, urls),
+                "sample_urls": urls[:5],
+            }
+        return summary
+
+    def generate_web_recon_report(self, output_dir: str):
+        """Generate the web_recon.txt file."""
+        path = os.path.join(output_dir, "web_recon.txt")
+        lines = [
+            "=" * 70,
+            "  WEB RECONNAISSANCE REPORT",
+            "  Passive analysis of domains discovered in APK",
+            "=" * 70,
+            "",
+            f"  Total URLs discovered: {len(self.raw_urls)}",
+            f"  Unique domains: {len(self.domains)}",
+            f"  Domains analyzed: {len(self.results)}",
+            "",
+        ]
+
+        for result in self.results:
+            lines.append("=" * 60)
+            lines.append(f"  DOMAIN: {result.domain}")
+            lines.append(f"  Category: {result.category}")
+            lines.append(f"  Security Score: {result.security_score}")
+            lines.append(f"  Reachable: {'Yes' if result.reachable else 'No'}")
+            if result.status_code:
+                lines.append(f"  HTTP Status: {result.status_code}")
+            lines.append("=" * 60)
+            lines.append("")
+
+            # URLs found for this domain
+            lines.append("  [URLs Found in APK]")
+            for url in result.urls[:10]:
+                lines.append(f"    - {url}")
+            lines.append("")
+
+            # SSL/TLS Info
+            if result.ssl_issuer or result.ssl_error:
+                lines.append("  [SSL/TLS Certificate]")
+                if result.ssl_error:
+                    lines.append(f"    Error: {result.ssl_error}")
+                else:
+                    lines.append(f"    Issuer: {result.ssl_issuer}")
+                    lines.append(f"    Subject: {result.ssl_subject}")
+                    lines.append(f"    Expiry: {result.ssl_expiry}")
+                    lines.append(f"    Protocol: {result.ssl_protocol}")
+                    if result.ssl_san_domains:
+                        lines.append(f"    SAN Domains ({len(result.ssl_san_domains)}):")
+                        for san in result.ssl_san_domains[:10]:
+                            lines.append(f"      - {san}")
+                lines.append("")
+
+            # Security Headers
+            if result.headers_present or result.headers_missing:
+                lines.append("  [Security Headers]")
+                for h in result.headers_present:
+                    lines.append(f"    [+] {h}")
+                for h in result.headers_missing:
+                    lines.append(f"    [-] {h} (MISSING)")
+                lines.append("")
+
+            # Technology Stack
+            if result.technology_stack:
+                lines.append("  [Technology Stack]")
+                for tech in result.technology_stack:
+                    lines.append(f"    - {tech}")
+                lines.append("")
+
+            # Cookie Issues
+            if result.cookies_without_httponly or result.cookies_without_secure:
+                lines.append("  [Cookie Issues]")
+                for c in result.cookies_without_httponly:
+                    lines.append(f"    [-] {c}: Missing HttpOnly")
+                for c in result.cookies_without_secure:
+                    lines.append(f"    [-] {c}: Missing Secure")
+                for c in result.cookies_without_samesite:
+                    lines.append(f"    [-] {c}: Missing SameSite")
+                lines.append("")
+
+            # CORS
+            if result.cors_misconfigured:
+                lines.append("  [CORS Misconfiguration]")
+                lines.append(f"    ! {result.cors_details}")
+                lines.append("")
+
+            # Open Redirect
+            if result.open_redirect_params:
+                lines.append("  [Open Redirect Indicators]")
+                for p in result.open_redirect_params:
+                    lines.append(f"    ? {p}")
+                lines.append("")
+
+            # Robots.txt
+            if result.robots_txt:
+                lines.append("  [robots.txt]")
+                for line in result.robots_txt.split("\n")[:20]:
+                    lines.append(f"    {line}")
+                lines.append("")
+
+            # Sitemap URLs
+            if result.sitemap_urls:
+                lines.append(f"  [Sitemap URLs] ({len(result.sitemap_urls)})")
+                for u in result.sitemap_urls[:10]:
+                    lines.append(f"    - {u}")
+                lines.append("")
+
+            # Sensitive paths
+            if result.sensitive_paths_found:
+                lines.append("  [Sensitive Paths Discovered]")
+                for p in result.sensitive_paths_found:
+                    lines.append(f"    ! {p}")
+                lines.append("")
+
+            # CT Subdomains
+            if result.ct_subdomains:
+                lines.append(f"  [CT Log Subdomains] ({len(result.ct_subdomains)})")
+                for sub in result.ct_subdomains[:20]:
+                    lines.append(f"    - {sub}")
+                lines.append("")
+
+            # JS Files
+            if result.js_files:
+                lines.append(f"  [JavaScript Files] ({len(result.js_files)})")
+                for js in result.js_files[:15]:
+                    lines.append(f"    - {js}")
+                lines.append("")
+
+            # API Endpoints
+            if result.api_endpoints:
+                lines.append(f"  [API Endpoints Discovered] ({len(result.api_endpoints)})")
+                for ep in result.api_endpoints[:20]:
+                    lines.append(f"    - {ep}")
+                lines.append("")
+
+            # Errors
+            if result.errors:
+                lines.append("  [Errors]")
+                for e in result.errors:
+                    lines.append(f"    - {e}")
+                lines.append("")
+
+            lines.append("")
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        return path
+
+
+# ===========================================================================
 # OUTPUT GENERATION
 # ===========================================================================
 
@@ -3533,6 +4219,80 @@ pre {{ background: #0d1117; padding: 15px; border-radius: 6px; overflow-x: auto;
 
 
 
+def _append_web_recon_html(html_path: str, summary: Dict, results: List, web_enabled: bool):
+    """Append web reconnaissance section to HTML report."""
+    h = html_module.escape
+    sev_colors = {"A+": "#28a745", "A": "#28a745", "B": "#17a2b8", "C": "#ffc107", "D": "#e85d04", "F": "#dc3545", "N/A": "#666"}
+
+    # Read existing HTML and insert before closing tags
+    with open(html_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Remove closing tags
+    content = content.replace("</div></body></html>", "")
+
+    parts = []
+    parts.append('<h2>Web Reconnaissance</h2>')
+
+    if not web_enabled:
+        parts.append(f'<p>Discovered {summary["total_urls"]} URLs across {summary["total_domains"]} domains.</p>')
+        parts.append('<p style="color:#ffc107;">Use <code>--web</code> flag to perform passive web analysis.</p>')
+        parts.append('<div class="stat-grid">')
+        for domain, info in list(summary.get("domains", {}).items())[:15]:
+            parts.append(f'<div class="stat-box"><div class="number" style="font-size:14px">{h(domain)}</div>')
+            parts.append(f'<div class="label">{h(info["category"])} | {info["url_count"]} URLs</div></div>')
+        parts.append('</div>')
+    elif results:
+        parts.append(f'<p>{len(results)} domains analyzed with passive reconnaissance.</p>')
+        parts.append('<div class="stat-grid">')
+        for r in results:
+            score_color = sev_colors.get(r.security_score, "#666")
+            parts.append(f'<div class="stat-box"><div class="number" style="color:{score_color}">{r.security_score}</div>')
+            parts.append(f'<div class="label">{h(r.domain)}</div></div>')
+        parts.append('</div>')
+
+        for result in results:
+            score_color = sev_colors.get(result.security_score, "#666")
+            parts.append(f'<div class="chain-box">')
+            parts.append(f'<div class="chain-title" style="color:{score_color}">{h(result.domain)} [{result.security_score}]</div>')
+            parts.append(f'<p>Category: {h(result.category)} | Status: {result.status_code or "N/A"} | Reachable: {"Yes" if result.reachable else "No"}</p>')
+
+            if result.ssl_issuer:
+                parts.append(f'<p><strong>SSL:</strong> Issuer: {h(result.ssl_issuer)} | Expires: {h(result.ssl_expiry)} | Protocol: {h(result.ssl_protocol)}</p>')
+            if result.ssl_error:
+                parts.append(f'<p style="color:#dc3545"><strong>SSL Error:</strong> {h(result.ssl_error)}</p>')
+            if result.headers_missing:
+                parts.append(f'<p><strong>Missing Headers:</strong> <span style="color:#dc3545">{", ".join(h(x) for x in result.headers_missing)}</span></p>')
+            if result.headers_present:
+                parts.append(f'<p><strong>Present Headers:</strong> <span style="color:#28a745">{", ".join(h(x) for x in result.headers_present)}</span></p>')
+            if result.technology_stack:
+                parts.append(f'<p><strong>Tech Stack:</strong> {", ".join(h(t) for t in result.technology_stack)}</p>')
+            if result.cors_misconfigured:
+                parts.append(f'<p style="color:#dc3545"><strong>CORS Issue:</strong> {h(result.cors_details)}</p>')
+            if result.sensitive_paths_found:
+                parts.append(f'<p><strong>Sensitive Paths:</strong></p><ul>')
+                for sp in result.sensitive_paths_found:
+                    parts.append(f'<li><code>{h(sp)}</code></li>')
+                parts.append('</ul>')
+            if result.ct_subdomains:
+                parts.append(f'<p><strong>CT Log Subdomains ({len(result.ct_subdomains)}):</strong></p>')
+                parts.append('<div style="font-size:11px;color:#888">')
+                parts.append(", ".join(h(s) for s in result.ct_subdomains[:20]))
+                parts.append('</div>')
+            if result.api_endpoints:
+                parts.append(f'<p><strong>API Endpoints ({len(result.api_endpoints)}):</strong></p><ul>')
+                for ep in result.api_endpoints[:10]:
+                    parts.append(f'<li><code>{h(ep)}</code></li>')
+                parts.append('</ul>')
+            parts.append('</div>')
+
+    # Close HTML
+    parts.append('</div></body></html>')
+
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(content + "\n".join(parts))
+
+
 # ===========================================================================
 # CLI ENTRY POINT
 # ===========================================================================
@@ -3547,6 +4307,7 @@ Examples:
   python analyze.py app.apk -o ./output_report
   python analyze.py app.apk --format all
   python analyze.py app.apk --format html --quiet
+  python analyze.py app.apk --web --format all
 
 Features:
   - DEX bytecode disassembly (Dalvik opcode parsing)
@@ -3558,6 +4319,7 @@ Features:
   - Permission abuse chain detection
   - Deep link / URI scheme analysis
   - Obfuscation tool detection
+  - Passive web reconnaissance (--web flag)
   - Bug-bounty-ready reporting (JSON + TXT + HTML)
         """
     )
@@ -3568,6 +4330,8 @@ Features:
                     help="Output format (default: all)")
     ap.add_argument("--min-len", type=int, default=6,
                     help="Minimum string length to extract (default: 6)")
+    ap.add_argument("--web", action="store_true",
+                    help="Enable passive web reconnaissance on discovered URLs/domains")
     ap.add_argument("--quiet", action="store_true",
                     help="Suppress terminal output")
     ap.add_argument("--version", action="version", version=f"APK Elite Analyzer v{VERSION}")
@@ -3601,6 +4365,28 @@ Features:
     analyzer = APKEliteAnalyzer(args.apk, output_dir=output_dir, min_str_len=args.min_len)
     report = analyzer.analyze()
 
+    # Web Reconnaissance
+    web_recon_results = None
+    web_recon_summary = None
+    discovered_urls = [f.value for f in report.findings if f.category == "network" and f.name == "Hardcoded URL"]
+    # Also collect URLs from native libs
+    for nl in report.native_libs:
+        discovered_urls.extend(nl.get("urls", []))
+
+    if discovered_urls:
+        web_recon = WebRecon(discovered_urls, quiet=args.quiet)
+        web_recon_summary = web_recon.get_discovered_urls_summary()
+
+        if args.web:
+            if not args.quiet:
+                print(f"\n{C_CYN}[*] --web flag enabled: Starting passive web reconnaissance...{C_RST}")
+            web_recon_results = web_recon.run()
+            web_recon.generate_web_recon_report(output_dir)
+        else:
+            if not args.quiet:
+                print(f"\n{C_CYN}[*] Discovered {len(discovered_urls)} URLs across {len(web_recon.domains)} domains")
+                print(f"    Use --web flag to perform passive web analysis on these endpoints{C_RST}")
+
     if not args.quiet:
         print_report(report)
 
@@ -3609,17 +4395,56 @@ Features:
 
     if args.format in ("json", "all"):
         p = os.path.join(output_dir, "report.json")
-        save_json_report(report, p)
+        # Add web recon data to JSON report
+        report_dict = report.to_dict()
+        if web_recon_summary:
+            report_dict["web_recon"] = {
+                "url_summary": web_recon_summary,
+                "scan_performed": args.web,
+            }
+            if web_recon_results:
+                report_dict["web_recon"]["results"] = [r.to_dict() for r in web_recon_results]
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(report_dict, f, indent=2, ensure_ascii=False, default=str)
         saved_files.append(p)
 
     if args.format in ("txt", "all"):
         p = os.path.join(output_dir, "report.txt")
         save_txt_report(report, p)
+        # Append web recon section to TXT report
+        if web_recon_summary or web_recon_results:
+            with open(p, "a", encoding="utf-8") as f:
+                f.write("\n\n")
+                f.write("=" * 70 + "\n")
+                f.write("[WEB RECONNAISSANCE]\n")
+                f.write("=" * 70 + "\n\n")
+                if not args.web:
+                    f.write(f"  Discovered {web_recon_summary['total_urls']} URLs across {web_recon_summary['total_domains']} domains\n")
+                    f.write("  (Use --web flag to perform full passive web analysis)\n\n")
+                    f.write("  Domains found:\n")
+                    for domain, info in list(web_recon_summary.get("domains", {}).items())[:20]:
+                        f.write(f"    - {domain} [{info['category']}] ({info['url_count']} URLs)\n")
+                elif web_recon_results:
+                    f.write(f"  Domains analyzed: {len(web_recon_results)}\n\n")
+                    for result in web_recon_results:
+                        f.write(f"  [{result.security_score}] {result.domain} ({result.category})\n")
+                        if result.headers_missing:
+                            f.write(f"      Missing headers: {', '.join(result.headers_missing)}\n")
+                        if result.cors_misconfigured:
+                            f.write(f"      CORS Issue: {result.cors_details}\n")
+                        if result.sensitive_paths_found:
+                            f.write(f"      Sensitive paths: {', '.join(result.sensitive_paths_found[:5])}\n")
+                        if result.ct_subdomains:
+                            f.write(f"      CT Subdomains: {len(result.ct_subdomains)} found\n")
+                        f.write("\n")
         saved_files.append(p)
 
     if args.format in ("html", "all"):
         p = os.path.join(output_dir, "report.html")
         save_html_report(report, p)
+        # Append web recon section to HTML report
+        if web_recon_summary or web_recon_results:
+            _append_web_recon_html(p, web_recon_summary, web_recon_results, args.web)
         saved_files.append(p)
 
     # Always generate supplementary files
@@ -3634,6 +4459,9 @@ Features:
 
     generate_exploit_notes(report, output_dir)
     saved_files.append(os.path.join(output_dir, "exploit_notes.md"))
+
+    if args.web and web_recon_results:
+        saved_files.append(os.path.join(output_dir, "web_recon.txt"))
 
     if not args.quiet:
         print(f"\n{C_GRN}{C_BLD}[+] Output generated:{C_RST}")
