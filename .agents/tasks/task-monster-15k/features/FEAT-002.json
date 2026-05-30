@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Create monster/cookie_manager.py (~1500 lines) and monster/param_miner.py (~1000 lines) - the two brand new modules.",
+  "status": "pending",
+  "steps": [
+    "Create monster/cookie_manager.py (~1500 lines) with: CookieJar class (load cookies from Netscape format file, load cookies from JSON file, save cookies to file, get cookies for domain, set/delete cookies, clear expired cookies, cookie count, iterate), SessionPersistence class (save/load session state between runs using JSON files in output dir, auto-save on exit), CookieFormatConverter class (netscape_to_json, json_to_netscape, to_curl_format for each cookie, to_burp_format, from_browser_export, from_har_file), AuthenticatedClient class (wraps HTTPClient and automatically adds cookies from jar to all requests, handles Set-Cookie responses to update jar, supports cookie-based auth flow), CookieSecurityAnalyzer class (check HttpOnly flag, check Secure flag, check SameSite attribute, check expiry/max-age, check domain scope, check path scope, detect session fixation risk, detect cookie without expiry, generate security report), SessionTokenDetector class (identify session cookies by name patterns like JSESSIONID/PHPSESSID/connect.sid etc, identify auth tokens, identify CSRF tokens, identify tracking cookies, classify cookie purpose), JWTAnalyzer class (decode JWT header and payload without verification, check expiry claim, check algorithm, detect weak algorithms like none/HS256 with asymmetric, extract claims, check token age), CookieScopeMapper class (map which cookies belong to which domains/paths, find cookies shared across subdomains, detect overly broad domain scope, find duplicate cookies), CookieReplayTester class (replay cookies to test if session is still valid, test cookie with modified values, test cookie removal impact, compare responses with/without specific cookies), BrowserCookieExtractor class (provide paths for Chrome/Firefox/Edge cookie databases on Windows/Mac/Linux, instructions for manual extraction, parse exported cookies)",
+    "Create monster/param_miner.py (~1000 lines) with: ParamMiner class (main orchestrator), HiddenParamDiscovery class (test common parameter names against URL, detect reflected params, detect params that change response, use wordlist of 200+ common hidden params like debug/test/admin/verbose/internal), ParamReflectionDetector class (inject unique canary values, check if reflected in response body/headers/attributes, classify reflection context: HTML body/attribute/JS/URL), InputVectorMapper class (map all input vectors for a URL: query params, form fields, headers, cookies, JSON body fields, path segments), FormExtractor class (parse HTML forms, extract action/method/fields/hidden fields, detect CSRF tokens in forms, detect file upload fields, classify form purpose), URLParamCategorizer class (categorize params as: identifiers/filters/pagination/sorting/auth/file-paths/redirects/search/debug, detect IDOR-prone params, detect SSRF-prone params, detect injection-prone params)",
+    "Verify: python -c 'from monster.cookie_manager import CookieManager, CookieSecurityAnalyzer, JWTAnalyzer; print(\"Cookie manager OK\")'",
+    "Verify: python -c 'from monster.param_miner import ParamMiner, FormExtractor, InputVectorMapper; print(\"Param miner OK\")'"
+  ],
+  "acceptance_criteria": [
+    "monster/cookie_manager.py has 1400+ lines",
+    "monster/param_miner.py has 900+ lines",
+    "All classes import correctly from both modules",
+    "No syntax errors in either file"
+  ],
+  "verification": [
+    "python -c 'from monster.cookie_manager import CookieManager, CookieSecurityAnalyzer, JWTAnalyzer, CookieFormatConverter, SessionPersistence; print(\"All cookie classes OK\")'",
+    "python -c 'from monster.param_miner import ParamMiner, FormExtractor, InputVectorMapper, HiddenParamDiscovery; print(\"All param classes OK\")'",
+    "wc -l /projects/sandbox/Bug-Bounty/monster/cookie_manager.py /projects/sandbox/Bug-Bounty/monster/param_miner.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

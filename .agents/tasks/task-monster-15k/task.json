@@ -1,0 +1,7 @@
+{
+  "task_id": "task-monster-15k",
+  "task_description": "Delete and recreate the monster/ toolkit from scratch with 15,000+ lines. Add cookie_manager.py and param_miner.py modules. Massively expand all existing modules. Make the monster significantly more powerful for bug bounty research.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

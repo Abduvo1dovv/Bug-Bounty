@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Delete existing monster/ directory and recreate the foundation: __init__.py, __main__.py, config.py (~1500 lines), and utils.py (~1200 lines) from scratch with massively expanded content.",
+  "status": "in_progress",
+  "steps": [
+    "Delete the entire /projects/sandbox/Bug-Bounty/monster/ directory with rm -rf",
+    "Recreate /projects/sandbox/Bug-Bounty/monster/ directory and /projects/sandbox/Bug-Bounty/monster/wordlists/ directory",
+    "Create monster/__init__.py with VERSION = '2.0.0' and module docstring",
+    "Create monster/__main__.py with the entry point (same pattern: from monster.main import main)",
+    "Create monster/config.py (~1500 lines) containing: DEFAULT_USER_AGENT, RATE_LIMIT_DELAY, MAX_THREADS, TIMEOUT, COMMON_PORTS (expanded to 30+), PATTERNS dict with 80+ secret detection regex patterns (AWS, GCP, Azure, Stripe, GitHub, GitLab, Slack, Discord, Twilio, SendGrid, Mailgun, Heroku, Firebase, Shopify, Square, PayPal, Braintree, DigitalOcean, Cloudflare, npm tokens, PyPI tokens, Artifactory, Docker registry, SSH keys, PGP keys, OAuth tokens, generic API keys, database connection strings, SMTP credentials, FTP credentials, etc.), TAKEOVER_FINGERPRINTS dict (expanded to 30+ services with cnames and response fingerprints), SECURITY_HEADERS list, CORS_TEST_ORIGINS list (expanded to 10+), TECH_SIGNATURES dict (expanded headers/cookies/body sections), GOOGLE_DORK_TEMPLATES (expanded to 40+), SHODAN_QUERY_TEMPLATES, REDIRECT_PARAMS (expanded to 40+), INFO_DISCLOSURE_PATHS (expanded to 100+), SENSITIVE_FILE_PATHS list (500+ entries including .env, .git, backup files, config files, log files, etc.), WAF_SIGNATURES dict (signatures for Cloudflare, AWS WAF, Akamai, Imperva, F5, Sucuri, ModSecurity, etc.), COMMON_PARAMS list (200+ parameter names commonly vulnerable), SUBDOMAIN_WORDLIST list (inline 2000 entries), API_KEY management functions (load_api_keys from env/config)",
+    "Create monster/utils.py (~1200 lines) containing: Color constants with colorama fallback, ColorOutput class (banner, info, success, warning, error, critical, finding, progress, table, section_header methods), RateLimiter class (thread-safe with configurable delay), HTTPClient class (GET/POST/HEAD/OPTIONS methods, cookie jar support, proxy support via HTTP_PROXY/SOCKS, request/response logging, custom headers, follow redirects option, retry logic), DNSResolver class (resolve A/AAAA/CNAME/MX/TXT/NS/SOA, zone transfer attempt, reverse DNS, get_all_records, multi-threaded batch resolve), FileManager class (save_json, save_text, save_html, save_csv, atomic writes, ensure_dir), ProxyManager class (load proxies from file, rotate proxies, test proxy connectivity), RequestLogger class (log all requests/responses to file for debugging), URL utility functions (domain_from_url, normalize_url, is_valid_domain, is_ip, extract_domain, url_dedup with smart normalization removing tracking params, extract_params_from_url), Encoding utilities (base64_encode, base64_decode, url_encode, url_decode, html_entity_encode, html_entity_decode, hex_encode, hex_decode), Hash utilities (md5, sha1, sha256, sha512 for strings and files), Network utilities (get_local_ip, get_public_ip_hint, detect_network_interfaces), safe_filename function",
+    "Recreate monster/wordlists/subdomains.txt with 200 common subdomain prefixes",
+    "Verify: python -c 'from monster.config import PATTERNS, SENSITIVE_FILE_PATHS, WAF_SIGNATURES; print(len(PATTERNS), len(SENSITIVE_FILE_PATHS), len(WAF_SIGNATURES))' should work",
+    "Verify: python -c 'from monster.utils import ColorOutput, HTTPClient, DNSResolver, FileManager; print(\"OK\")' should work"
+  ],
+  "acceptance_criteria": [
+    "monster/config.py has 1400+ lines",
+    "monster/utils.py has 1100+ lines",
+    "All imports in config.py and utils.py work correctly",
+    "python -c 'import monster' succeeds"
+  ],
+  "verification": [
+    "python -c 'import monster; print(monster.VERSION)'",
+    "python -c 'from monster.config import PATTERNS, SENSITIVE_FILE_PATHS, WAF_SIGNATURES, SUBDOMAIN_WORDLIST; print(f\"Patterns: {len(PATTERNS)}, Sensitive files: {len(SENSITIVE_FILE_PATHS)}, WAF sigs: {len(WAF_SIGNATURES)}, Subdomains: {len(SUBDOMAIN_WORDLIST)}\")'",
+    "python -c 'from monster.utils import ColorOutput, HTTPClient, DNSResolver, FileManager, ProxyManager, RequestLogger; print(\"All utils OK\")'",
+    "wc -l /projects/sandbox/Bug-Bounty/monster/config.py /projects/sandbox/Bug-Bounty/monster/utils.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

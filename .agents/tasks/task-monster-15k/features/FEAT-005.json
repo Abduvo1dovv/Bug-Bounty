@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Create monster/report_generator.py (~2000 lines) and monster/main.py (~1000 lines) - report generation and CLI orchestration, then verify total line count reaches 15000+.",
+  "status": "pending",
+  "steps": [
+    "Create monster/report_generator.py (~2000 lines) with: CVSSCalculator class (calculate base score from vector string, severity_from_score static method), OWASPMapper class (map findings to OWASP Top 10 2021 categories: A01-Broken Access Control, A02-Cryptographic Failures, A03-Injection, A04-Insecure Design, A05-Security Misconfiguration, A06-Vulnerable Components, A07-Auth Failures, A08-Software Integrity, A09-Logging Failures, A10-SSRF, with descriptions and references for each), RiskScorer class (calculate risk based on likelihood*impact matrix, factor in asset criticality, calculate aggregate risk for target), ReportGenerator class with: (1) generate_full_report - orchestrate all report types, (2) generate_json_report - comprehensive JSON with all findings/metadata, (3) generate_markdown_report - professional markdown with tables/sections/severity breakdown, (4) generate_html_report - interactive HTML with CSS styling, JavaScript for sorting/filtering findings table, collapsible sections, severity badges, executive summary chart, (5) generate_executive_summary - high-level overview for management, (6) generate_hackerone_template - format findings as HackerOne report templates with ## Summary, ## Steps To Reproduce, ## Impact, ## Supporting Material, (7) generate_bugcrowd_template - Bugcrowd-specific format, (8) generate_intigriti_template - Intigriti format, (9) generate_csv_export - CSV of all findings for spreadsheet analysis, (10) generate_remediation_plan - prioritized fix list with effort estimates, (11) generate_comparison_report - compare current scan vs previous scan results, (12) _calculate_severity_stats - count findings by severity, (13) _generate_timeline - show scan phases and timing, (14) _format_finding_detail - rich formatting for individual findings, (15) _generate_risk_matrix_html - visual risk matrix in HTML. Include full HTML template with inline CSS and JavaScript (~200 lines of HTML/CSS/JS template strings).",
+    "Create monster/main.py (~1000 lines) with: Monster class (orchestrates all modules) with __init__ taking args, run() method. Add: (1) Interactive mode - if no args given, prompt for target/module, (2) Config file support - load settings from .monsterrc (JSON) in current dir or home dir, (3) Plugin system hooks - before_scan/after_scan/on_finding callbacks, plugin_dir scanning, (4) Scan profiles - quick (recon only, fast), normal (recon+js+vuln), deep (all modules, more thorough, slower), aggressive (all with more active checks), (5) Progress tracking with ETA calculation, (6) Signal handling - catch SIGINT for graceful shutdown, save partial results, (7) Notification hooks - send webhook POST on critical findings, (8) Cookie integration - --cookies flag to load cookie file, --cookie-jar to save/load cookies between runs, (9) Proxy support - --proxy flag to route through HTTP/SOCKS proxy, (10) Output format selection - --format json/md/html/all, (11) Scope filtering - --exclude to exclude domains/patterns, (12) Resume capability - --resume to skip already-scanned targets. main() function with argparse including all flags. Ensure 'python -m monster --help' shows all options nicely formatted.",
+    "Run: cd /projects/sandbox/Bug-Bounty && python -m monster --help",
+    "Run: cd /projects/sandbox/Bug-Bounty && python -m monster --target example.com --dry-run",
+    "Run: find /projects/sandbox/Bug-Bounty/monster -name '*.py' -exec wc -l {} + | tail -1 to verify 15000+ total",
+    "If total is under 15000, identify which files need expansion and expand them"
+  ],
+  "acceptance_criteria": [
+    "monster/report_generator.py has 1800+ lines",
+    "monster/main.py has 900+ lines",
+    "python -m monster --help works and shows all options",
+    "python -m monster --target example.com --dry-run runs without errors",
+    "Total line count across all monster/*.py files exceeds 15000"
+  ],
+  "verification": [
+    "cd /projects/sandbox/Bug-Bounty && python -m monster --help",
+    "cd /projects/sandbox/Bug-Bounty && python -m monster --target example.com --dry-run",
+    "find /projects/sandbox/Bug-Bounty/monster -name '*.py' -exec wc -l {} + | sort -n"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

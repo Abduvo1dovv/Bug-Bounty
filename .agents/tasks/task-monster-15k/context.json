@@ -1,0 +1,26 @@
+{
+  "project_type": "Python CLI security toolkit for bug bounty",
+  "language": "Python 3.11",
+  "build_system": "None (pure Python with colorama as only external dep)",
+  "test_framework": "Manual verification (python -m monster --help, python -m monster --target example.com --dry-run)",
+  "build_command": "python -c \"import monster; print(monster.VERSION)\"",
+  "test_command": "cd /projects/sandbox/Bug-Bounty && python -m monster --help && python -m monster --target example.com --dry-run",
+  "verification_instructions": "1. python -m monster --help must show usage. 2. python -m monster --target example.com --dry-run must run all modules without network. 3. All modules must import correctly. 4. Total line count must exceed 15000.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "pip install colorama (only external dependency)",
+  "environment_constraints": "OPEN_INTERNET network mode. Python 3.11 available via pyenv. No active exploitation - passive/semi-passive scanning only.",
+  "contribution_requirements": "Pure Python standard library + colorama only. Maintain colored output style. python -m monster must still work.",
+  "key_patterns": "Dataclass-based result containers, HTTPClient using urllib, ColorOutput for terminal formatting, FileManager for atomic writes, RateLimiter for thread-safe delays, module runner pattern in main.py",
+  "relevant_files": [
+    "monster/__init__.py",
+    "monster/__main__.py",
+    "monster/main.py",
+    "monster/config.py",
+    "monster/utils.py",
+    "monster/recon.py",
+    "monster/js_analyzer.py",
+    "monster/vuln_scanner.py",
+    "monster/report_generator.py"
+  ],
+  "directory_structure": "monster/ - main package with all modules. monster/wordlists/ - subdomain wordlist. apk_analyzer/ - separate APK analysis tool. monster_output/ - default output directory."
+}
