@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Create recon.py - Full Passive Reconnaissance Engine. This module performs comprehensive subdomain enumeration, DNS analysis, technology fingerprinting, and historical URL discovery against target domains. All passive/semi-passive techniques only.",
+  "status": "completed",
+  "steps": [
+    "Create /projects/sandbox/Bug-Bounty/monster/recon.py with a ReconEngine class that takes a domain and output_dir",
+    "Implement subdomain enumeration with multiple sources: (a) Certificate Transparency via crt.sh API (https://crt.sh/?q=%25.{domain}&output=json), (b) DNS bruteforce using wordlists/subdomains.txt with socket.getaddrinfo, (c) VirusTotal passive DNS (https://www.virustotal.com/vtapi/v2/domain/report if API key in config), (d) SecurityTrails API (if key provided), (e) Wayback Machine URL extraction (https://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&fl=original&collapse=urlkey), (f) Common Crawl index search (http://index.commoncrawl.org/CC-MAIN-2024-10-index?url=*.{domain}&output=json)",
+    "Implement DNS record enumeration: resolve A, AAAA, CNAME, MX, TXT, NS, SOA records for each discovered subdomain using subprocess dig or socket fallback",
+    "Implement technology fingerprinting: analyze HTTP response headers (Server, X-Powered-By, X-AspNet-Version, X-Generator, Via, X-Cache), cookies (JSESSIONID=Java, PHPSESSID=PHP, ASP.NET_SessionId=ASP.NET, __cfduid=Cloudflare), HTML meta generators, common JS framework indicators in body",
+    "Implement port scanning hints: check common web ports [80, 443, 8080, 8443, 3000, 5000, 9090, 8000, 8888, 4443] via socket.connect_ex with short timeout",
+    "Implement HTTP response analysis: GET each live subdomain, record status code, redirect chain, response size, interesting headers",
+    "Implement historical URL discovery via Wayback Machine CDX API, extract unique paths and parameters",
+    "Implement Google dorking query generator: site:domain, inurl:admin, filetype:pdf/sql/env/log/bak, intitle:index of, ext:php/asp/jsp",
+    "Implement Shodan query generator: build search strings like 'hostname:domain', 'ssl.cert.subject.CN:domain', 'http.title:domain'",
+    "Add a run() method that orchestrates all sub-modules in order with progress output via ColorOutput, stores results in a ReconResults dataclass, and saves to JSON file in output_dir",
+    "Support --dry-run flag that shows what would be done without making network calls"
+  ],
+  "acceptance_criteria": [
+    "from monster.recon import ReconEngine succeeds",
+    "ReconEngine('example.com', '/tmp/out').run() executes without crashing (may have limited results due to rate limits)",
+    "crt.sh subdomain enumeration returns parsed results for domains with CT logs",
+    "DNS resolution works for valid domains",
+    "Technology fingerprinting identifies server software from headers",
+    "Google dork and Shodan query generators produce valid search strings",
+    "All network errors are caught gracefully with informative messages"
+  ],
+  "verification": [
+    "python -c \"from monster.recon import ReconEngine; print('recon import OK')\"",
+    "python -c \"from monster.recon import ReconEngine; r = ReconEngine('example.com', '/tmp/recon-test'); print(r.generate_google_dorks())\"",
+    "python -c \"from monster.recon import ReconEngine; r = ReconEngine('example.com', '/tmp/recon-test'); print(r.generate_shodan_queries())\""
+  ],
+  "blocked_reason": null,
+  "findings": "All verification commands pass. ReconEngine imports cleanly, generates correct Google dorks and Shodan queries. Dry-run mode works as expected, skipping all network calls. ReconResults dataclass has all required fields. Uses HTTPClient, DNSResolver, ColorOutput, FileManager from utils.py. Uses TECH_SIGNATURES, GOOGLE_DORK_TEMPLATES, SHODAN_QUERY_TEMPLATES, COMMON_PORTS from config.py."
+}
