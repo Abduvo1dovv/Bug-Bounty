@@ -1,64 +1,155 @@
-# APK Analyzer (no decompile)
+# APK Deep Analyzer v2.0
 
-APK ichidan **dekompilyatsiyasiz** xavfli/maxfiy ma'lumotlarni topadigan skript.
-`apktool`, `jadx`, `dex2jar` kerak emas — APK ZIP arxiv sifatida ochiladi va
-fayllar ichidan stringlar to'g'ridan-to'g'ri sug'urib olinadi.
+Advanced APK security scanner with **DEX binary parsing**, **vulnerability detection**,
+**CVE/CWE mapping**, and **known vulnerable library detection**.
 
-## O'rnatish
+No decompilation tools required (`apktool`, `jadx`, `dex2jar` NOT needed).
+Pure Python binary parsing of DEX format structures.
+
+## Features
+
+### 1. DEX Deep Parser (no decompilation)
+- Parses DEX file format headers (magic, checksum, signature)
+- Extracts all string_ids, type_ids, proto_ids, field_ids, method_ids, class_defs
+- Resolves full class names, method references, field references
+- Detects obfuscated vs non-obfuscated classes (obfuscation score)
+- Cross-references which classes call which methods
+
+### 2. Vulnerability Detection with CVE/CWE Mapping
+
+| Category | Detection | Reference |
+|----------|-----------|-----------|
+| Insecure Crypto | DES, 3DES, RC4, MD5, ECB mode, static IV/key | CWE-327, CWE-321 |
+| Weak SSL/TLS | TrustAll, AllowAllHostname, no verification | CVE-2014-3566, CWE-295 |
+| SQL Injection | rawQuery, execSQL with concat | CWE-89 |
+| Path Traversal | Unsanitized file ops, "../" | CWE-22 |
+| Insecure WebView | JS+Interface, file access | CVE-2012-6636, CWE-749 |
+| Data Storage | MODE_WORLD_READABLE, plaintext creds | CWE-312 |
+| Intent Injection | Implicit intents, exported | CWE-927 |
+| Clipboard Leak | ClipboardManager sensitive data | CWE-200 |
+| Insecure Random | java.util.Random for crypto | CWE-330 |
+| Hardcoded Keys | Static keys near Cipher/SecretKeySpec | CWE-321 |
+| Logging | Log.d/v/i with sensitive data | CWE-532 |
+| Backup Vuln | allowBackup=true | CWE-921 |
+| Debuggable | debuggable=true in production | CWE-489 |
+| Tapjacking | No filterTouchesWhenObscured | CWE-1021 |
+| Deep Link Abuse | Unvalidated deep links | CWE-939 |
+| Fragment Injection | Exported PreferenceActivity | CVE-2013-6271 |
+| Zip Slip | ZipEntry without path validation | CWE-22 |
+| Deserialization | ObjectInputStream no validation | CWE-502 |
+| Command Injection | Runtime.exec / ProcessBuilder | CWE-78 |
+
+### 3. Known Vulnerable Library Detection
+- OkHttp < 3.12.1 (CVE-2018-20200)
+- Apache HttpClient (CVE-2014-3577)
+- BouncyCastle old versions (CVE-2018-1000613)
+- Jackson-databind (CVE-2020-36518)
+- Gson < 2.8.9 (CVE-2022-25647)
+- Facebook SDK, Firebase, Glide, Picasso, Retrofit, Volley
+- Butterknife, EventBus, Dagger
+
+### 4. Additional Analysis
+- Certificate/signing info extraction (META-INF/)
+- 30+ secret pattern detection (API keys, tokens, credentials)
+- Analytics/tracking SDK detection (Firebase, Facebook, Mixpanel, Amplitude, etc.)
+- Anti-debugging/anti-root check detection
+- Obfuscation level scoring (0-100%)
+- Network security analysis
+- Exported component analysis
+
+### 5. Reporting
+- **JSON** - Machine-readable, full details
+- **TXT** - Human-readable with executive summary for bug bounty reports
+- **HTML** - Visual report with colored severity badges, dark theme
+
+Each finding includes:
+- Severity (CRITICAL / HIGH / MEDIUM / LOW / INFO)
+- CVE/CWE identifier
+- CVSS score estimate
+- Affected class/method
+- Description, remediation, confidence level
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`colorama` faqat rangli chiqish uchun, majburiy emas.
+Only `colorama` is used (optional, for colored terminal output).
+No other dependencies needed - pure Python standard library.
 
-## Foydalanish
-
-```bash
-python analyze.py com.coupang.mobile.lightspeed.apk
-```
-
-Hisobot fayllari:
-
-- `com.coupang.mobile.lightspeed.report.json` — JSON (avtomatik tahlil uchun)
-- `com.coupang.mobile.lightspeed.report.txt`  — o'qish uchun matn
-
-Qo'shimcha bayroqlar:
+## Usage
 
 ```bash
-python analyze.py app.apk -o my_report          # hisobot prefiksi
-python analyze.py app.apk --min-len 8           # qisqa shovqin stringlarni o'tkazib yuborish
-python analyze.py app.apk --quiet               # terminalga bosmasin
+# Basic scan (generates all report formats)
+python analyze.py app.apk
+
+# Custom output prefix
+python analyze.py app.apk -o my_report
+
+# Specific format only
+python analyze.py app.apk --format html
+python analyze.py app.apk --format json
+python analyze.py app.apk --format txt
+
+# Quiet mode (no terminal output)
+python analyze.py app.apk --quiet
+
+# Adjust string extraction sensitivity
+python analyze.py app.apk --min-len 8
 ```
 
-## Nimalarni topadi
+Output files:
+- `<name>.report.json` - Full JSON report
+- `<name>.report.txt` - Text report with executive summary
+- `<name>.report.html` - Visual HTML report
 
-| Toifa       | Misol |
-|-------------|-------|
-| Secret      | Google API Key, AWS Key, Slack Token, GitHub PAT, Stripe, Twilio, SendGrid, Mapbox, ... |
-| Auth        | JWT, `Authorization: Bearer ...`, Basic Auth in URL, hardcoded password/secret |
-| Cookie      | `Set-Cookie:`, `Cookie:`, `JSESSIONID`, `PHPSESSID`, `access_token`, `refresh_token` |
-| Crypto      | `-----BEGIN PRIVATE KEY-----` (RSA / EC / OpenSSH / PGP) |
-| Network     | Hardcoded URL (http/https), IP, S3 bucket, Firebase URL |
-| Manifest    | Xavfli ruxsatlar, `usesCleartextTraffic`, `debuggable` belgilar |
+## Report Structure
 
-## Bug bounty uchun keyingi qadamlar
+```
+[RISK SCORE] 75/100
 
-Skript topgan narsalardan asosan diqqat qilish kerak:
+[DEX ANALYSIS]
+  classes.dex: 5420 classes, 48210 methods, 22105 fields
+  Obfuscation: 34.2%
 
-1. **`http://`** bilan boshlanuvchi endpoint'lar — cleartext traffic, MITM uchun
-2. **Hardcoded API key/secret** — agar production keyi bo'lsa, bu odatda yuqori darajali topilma
-3. **Shu APK uchun mo'ljallanmagan 3rd-party token'lar** (masalan Slack webhook) — leak
-4. **`debuggable=true`** chiqsa — release build'da bu jiddiy
-5. **`allowBackup=true`** + sezgir ma'lumot — `adb backup` orqali ekstraksiya mumkin
-6. **Internal/staging hostlari** (`*.internal`, `*.dev`, `*.stg`) — ko'pincha qo'shimcha attack surface
+[VULNERABLE LIBRARIES]
+  - OkHttp (< 3.12.1)
+  - Jackson Databind
 
-> Eslatma: skript faqat statik analiz qiladi. Topilgan narsalarni qo'lda
-> tekshirib chiqing — false positive bo'lishi mumkin (masalan Stripe `pk_live_`
-> public key — bu maxfiy emas).
+[TRACKING SDKs]
+  - Firebase Analytics
+  - Facebook Analytics
 
-## Bug bounty etikasi
+[FINDINGS]
+  [CRITICAL] Trust All Certificates [CWE-295] CVSS:9.1
+  [HIGH] Hardcoded Cryptographic Key [CWE-321] CVSS:9.1
+  ...
+```
 
-Bu skriptni faqat **siz uchun ruxsat berilgan dasturlar** (HackerOne, Bugcrowd va h.k.)
-doirasidagi APK'larga qo'llang. Topilgan narsalarni dastur scope va policy'siga
-muvofiq xabar qiling.
+## How It Works
+
+1. Opens APK as ZIP archive
+2. Parses DEX binary format (header, string pool, type/proto/field/method/class tables)
+3. Extracts binary AndroidManifest.xml string pool
+4. Runs vulnerability patterns against DEX structures
+5. Matches class paths against known vulnerable library signatures
+6. Scans string data for hardcoded secrets/credentials
+7. Generates multi-format reports
+
+## Bug Bounty Tips
+
+Priority findings for reports:
+1. **CRITICAL/HIGH vulnerabilities** with CVE references (strongest impact)
+2. **Hardcoded API keys/secrets** - if production keys, high severity
+3. **Trust All Certificates / No hostname verification** - MITM possible
+4. **Cleartext HTTP endpoints** - traffic interception
+5. **Debuggable=true** in release build - debugger attachment
+6. **Known vulnerable libraries** - reference specific CVEs
+7. **Exported components without permissions** - unauthorized access
+
+## Ethics
+
+Use this tool only on applications you have authorization to test
+(HackerOne, Bugcrowd, etc.). Report findings responsibly according
+to the program's scope and disclosure policy.
