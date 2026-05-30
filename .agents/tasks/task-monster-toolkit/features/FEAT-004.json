@@ -1,0 +1,38 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Create vuln_scanner.py - Passive Vulnerability Detector. Performs intelligent passive/semi-passive vulnerability detection including CORS misconfiguration, security header analysis, cookie auditing, subdomain takeover detection, SSL/TLS analysis, CSP bypass analysis, and more. NO active exploitation.",
+  "status": "completed",
+  "steps": [
+    "Create /projects/sandbox/Bug-Bounty/monster/vuln_scanner.py with a VulnScanner class that takes a list of target URLs, discovered subdomains data, and output_dir",
+    "Implement CORS misconfiguration analysis: send requests with various Origin headers (null, attacker.com, target.com.evil.com, sub.target.com) and check if Access-Control-Allow-Origin reflects them, check for Access-Control-Allow-Credentials: true with reflected origin (critical finding)",
+    "Implement security header analysis: check for presence and correctness of X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Strict-Transport-Security (HSTS), Content-Security-Policy, Referrer-Policy, Permissions-Policy, Cache-Control on sensitive pages; provide remediation for each missing/misconfigured header",
+    "Implement cookie security audit: check all Set-Cookie headers for Secure flag, HttpOnly flag, SameSite attribute, __Host- and __Secure- prefixes, domain scope (too broad?), path scope, expiry (session vs persistent)",
+    "Implement subdomain takeover detection: for each subdomain with CNAME record, check if the CNAME target is an unclaimed service by matching against takeover fingerprints in config.py (check HTTP response for service-specific error pages like 'There isn\\'t a GitHub Pages site here', 'NoSuchBucket', 'No such app', 'herokucdn.com/error-pages', etc.)",
+    "Implement open redirect detection: check for common redirect parameters (url, redirect, next, dest, destination, redir, redirect_uri, return, returnTo, go, goto, target, link, out, view, ref, callback, continue, return_to) in discovered URLs",
+    "Implement information disclosure detection: check for Server header version info, X-Powered-By, X-AspNet-Version, X-Generator, stack traces in error responses, directory listing indicators, .git/HEAD exposure, .env file exposure, /server-status, /server-info, wp-config.php.bak, phpinfo.php",
+    "Implement email security analysis: check SPF record (v=spf1), DKIM selector records, DMARC record (v=DMARC1), identify weak/missing policies",
+    "Implement SSL/TLS analysis: use ssl.create_default_context() to check certificate validity, expiry, issuer, SANs; check for HSTS preload eligibility; identify self-signed certs",
+    "Implement CSP bypass analysis: if Content-Security-Policy header exists, parse directives and find weaknesses (unsafe-inline, unsafe-eval, data: in script-src, wildcard origins *.googleapis.com, missing frame-ancestors, nonce/hash usage)",
+    "Implement clickjacking potential: check X-Frame-Options presence and value, CSP frame-ancestors directive",
+    "Implement HTTP method testing: send OPTIONS request to check allowed methods, flag if PUT/DELETE/TRACE are allowed",
+    "Implement host header injection indicator: send request with modified Host header and check if it's reflected in response body or Location header",
+    "Create a Finding dataclass with: type, severity (CRITICAL/HIGH/MEDIUM/LOW/INFO), title, description, url, evidence, remediation, cvss_score, cwe_id",
+    "Add a run() method that executes all checks against all targets, collects Finding objects, and saves structured results"
+  ],
+  "acceptance_criteria": [
+    "from monster.vuln_scanner import VulnScanner succeeds",
+    "VulnScanner produces Finding objects with proper severity classification",
+    "Security header analysis correctly identifies missing headers",
+    "Cookie audit detects missing Secure/HttpOnly flags",
+    "Subdomain takeover detection matches known fingerprints",
+    "CSP parsing correctly identifies unsafe-inline and unsafe-eval as weaknesses",
+    "All network operations use rate limiting and handle errors gracefully"
+  ],
+  "verification": [
+    "python -c \"from monster.vuln_scanner import VulnScanner, Finding; print('vuln_scanner import OK')\"",
+    "python -c \"from monster.vuln_scanner import VulnScanner; v = VulnScanner(['https://example.com'], {}, '/tmp/vuln-test'); print('init OK')\""
+  ],
+  "blocked_reason": null,
+  "findings": "All verification commands pass. VulnScanner imports cleanly. Finding dataclass works with to_dict(). All 13 public methods present: check_clickjacking, check_cookie_security, check_cors, check_csp_weaknesses, check_email_security, check_host_header, check_http_methods, check_information_disclosure, check_open_redirect_params, check_security_headers, check_ssl_tls, check_subdomain_takeover, run. Uses config patterns (CORS_TEST_ORIGINS, TAKEOVER_FINGERPRINTS, SECURITY_HEADERS, REDIRECT_PARAMS, INFO_DISCLOSURE_PATHS). Uses utils (HTTPClient, DNSResolver, ColorOutput, FileManager, RateLimiter). Dry-run mode supported."
+}
