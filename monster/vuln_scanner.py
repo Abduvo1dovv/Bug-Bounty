@@ -257,7 +257,7 @@ class VulnScanner:
             try:
                 url = normalize_url(target)
                 domain = domain_from_url(url)
-                self.color.status(f"Scanning: {url}")
+                self.color.info(f"Scanning: {url}")
 
                 # Run all checks
                 self.check_security_headers(url)
@@ -2845,7 +2845,7 @@ class VulnScanner:
             }
 
             json_path = Path(self.output_dir) / "vuln_findings.json"
-            self.file_manager.write_json(str(json_path), findings_data)
+            self.file_manager.save_json(findings_data, str(json_path))
 
             # Save text summary
             summary_path = Path(self.output_dir) / "vuln_findings_summary.txt"

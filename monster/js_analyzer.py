@@ -494,7 +494,7 @@ class JSAnalyzer:
 
         for target in self.targets:
             try:
-                self.color.status(f"Analyzing: {target}")
+                self.color.info(f"Analyzing: {target}")
                 result = self._analyze_target(target)
                 self.results.append(result)
                 self.color.success(
@@ -2888,7 +2888,7 @@ class JSAnalyzer:
 
             # Save JSON report
             json_path = Path(self.output_dir) / "js_analysis.json"
-            self.file_manager.write_json(str(json_path), output_data)
+            self.file_manager.save_json(output_data, str(json_path))
 
             # Save text summary
             summary_path = Path(self.output_dir) / "js_analysis_summary.txt"
