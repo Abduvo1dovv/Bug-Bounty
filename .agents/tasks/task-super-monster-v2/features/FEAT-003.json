@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Implement correlator.py (real attack chain detection from verified findings only) and reporter.py (clean honest output with REPORT THIS / INVESTIGATE / INFORMATIONAL categories, no bounty estimates).",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create /projects/sandbox/Bug-Bounty/super_monster/correlator.py (~500 lines): SmartCorrelator class that ONLY creates chains from VERIFIED findings. Rules (strict - no noise): CORS on payment domain + no HSTS on same domain = MITM chain (HIGH). Cookie without Secure flag on auth domain + HTTP available = session theft chain (HIGH). API endpoint exposed without auth + sensitive data in response = data leak chain (CRITICAL). CSP unsafe-inline on payment + cookie insecure = XSS-to-session-theft chain (HIGH). Subdomain takeover + cookie scope too broad = account takeover chain (CRITICAL). Method correlate(verified_findings) returns list of Chain objects. Each Chain has: title, description, findings list, impact description, confidence score (only >0.8 reported), exploitability assessment. DO NOT chain 'missing header A + missing header B' - that is noise not a chain.",
     "Create /projects/sandbox/Bug-Bounty/super_monster/reporter.py (~500 lines): Reporter class that generates clean, honest output. Method generate_report(verified_findings, chains, scan_stats) produces: 1) Console output with colored progress during scan. 2) Final summary categorized as: REPORT THESE (verified, real impact, HIGH+ severity on sensitive domains), INVESTIGATE FURTHER (verified but needs manual confirmation for exploit), INFORMATIONAL (low severity, informational only). 3) JSON report file with all findings, chains, and metadata. 4) Markdown report file formatted for HackerOne submission (for REPORT THESE items only). NO bounty estimates anywhere. Show: severity, domain, finding type, evidence, impact description, reproduction steps. Include scan duration, domains scanned, findings filtered as false positives."
@@ -21,5 +21,5 @@
     "python -c \"from super_monster.reporter import Reporter; r = Reporter(); print(dir(r))\" | grep -q generate_report"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Both modules created and verified. correlator.py (501 lines) implements SmartCorrelator with 7 chain rules that only correlate verified findings into real attack paths (confidence > 0.8 required). reporter.py (506 lines) implements Reporter with 3-tier categorization (REPORT THESE, INVESTIGATE FURTHER, INFORMATIONAL), JSON and Markdown output, and zero bounty estimates. All imports resolve. Functional test confirmed chains are created correctly and reports generate valid JSON/MD. The python -m super_monster --help command fails because main.py does not exist yet (FEAT-004), but this does not affect FEAT-003 acceptance criteria."
 }
