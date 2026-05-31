@@ -45,5 +45,7 @@ __all__ = [
     "__version__",
     "config",
     "finding_db",
+    "correlator",
+    "prioritizer",
     "main",
 ]
