@@ -62,7 +62,7 @@ Bug Bounty Arsenal is a modular collection of security research tools built in p
 |---|------|-------------|--------|
 | 1 | [APK Analyzer](apk_analyzer/README.md) | Mobile app static analysis with DEX binary parsing | :white_check_mark: Ready |
 | 2 | [Monster](monster/README.md) | Web reconnaissance & vulnerability scanner | :white_check_mark: Ready |
-| 3 | Super Monster | Elite mode - multi-target orchestration & advanced correlation | :construction: Coming Soon |
+| 3 | [Super Monster](super_monster/README.md) | Elite mode - multi-target orchestration & advanced correlation | :white_check_mark: Ready |
 
 ---
 
@@ -104,9 +104,35 @@ python -m monster --target example.com --profile deep
 
 ---
 
-### 3. Super Monster - Coming Soon
+### 3. Super Monster - Bug Bounty Intelligence Engine
 
-> Elite mode with multi-target orchestration, finding correlation across targets, automatic severity escalation, and AI-assisted report writing. Stay tuned.
+> **[Full Documentation](super_monster/README.md)**
+
+Advanced multi-target correlation, AI-based prioritization, and attack planning toolkit. Integrates with Monster's JSON output to detect attack chains across hosts, rank findings by exploitability and bounty value, and generate elite reports ready for submission.
+
+**Highlights:**
+- Multi-target finding correlation with 12 chain detection rules
+- 5-factor weighted priority scoring (CVSS, exploitability, business impact, bounty value, correlation bonus)
+- Automatic retest scheduling with 4 strategies (full, critical_only, oldest_first, random_sample)
+- Attack path planning with step-by-step exploitation playbooks
+- Temporal diff analysis between scan runs
+- Multi-channel notifications (console, file, Discord, Slack, Telegram webhooks)
+- Elite reporting in JSON, Markdown, and dark-themed HTML formats
+- HackerOne and Bugcrowd report template generation
+
+```bash
+# Run the full pipeline on Monster output
+python -m super_monster full --input ./monster_output/reports --output ./super_output
+
+# Correlate findings across multiple targets
+python -m super_monster correlate --input ./monster_output/reports
+
+# Prioritize and rank findings
+python -m super_monster prioritize --input ./monster_output/reports
+
+# Generate attack plans
+python -m super_monster plan --input ./monster_output/reports --output ./plans
+```
 
 ---
 
@@ -259,6 +285,21 @@ Bug-Bounty/
 |   |-- report_generator.py    # Report generation (JSON/MD/HTML)
 |   +-- wordlists/
 |       +-- subdomains.txt     # Subdomain wordlist
+|
+|-- super_monster/             # Tool 3: Bug Bounty Intelligence Engine
+|   |-- README.md              # Full documentation
+|   |-- __init__.py            # Package init + version
+|   |-- __main__.py            # Entry point (python -m super_monster)
+|   |-- main.py                # CLI controller with subcommands
+|   |-- config.py              # Scoring weights, thresholds, colors
+|   |-- finding_db.py          # Finding storage & deduplication
+|   |-- correlator.py          # Cross-target chain detection
+|   |-- prioritizer.py         # 5-factor priority scoring
+|   |-- attack_planner.py      # Exploitation playbook generation
+|   |-- diff_engine.py         # Temporal scan comparison
+|   |-- retester.py            # Retest scheduling & verification
+|   |-- notification.py        # Multi-channel alert dispatch
+|   +-- reporter.py            # Elite report generation (JSON/MD/HTML)
 |
 +-- monster_output/            # Default output directory
     +-- reports/               # Generated reports
