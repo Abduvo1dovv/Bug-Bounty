@@ -1,0 +1,7 @@
+{
+  "task_id": "task-super-monster",
+  "task_description": "Create a new super_monster/ Python package with multi-target correlation, automatic retest, AI-based prioritization, attack planning, diff engine, notifications, and elite reporting. Target ~13,000 lines of professional bug bounty intelligence tooling.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Create the super_monster/ package foundation with config, finding_db, and CLI framework. This establishes the package structure (__init__.py, __main__.py, main.py, config.py, finding_db.py) that all other modules depend on. The finding_db provides the central data store that correlator, retester, and prioritizer all read from/write to.",
+  "status": "in_progress",
+  "steps": [
+    "Create /projects/sandbox/Bug-Bounty/super_monster/__init__.py with VERSION='1.0.0', package docstring, and __all__ exports",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/__main__.py with entry point that calls main.main()",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/config.py (~500 lines): Define scoring weights (CVSS: 0.25, Exploitability: 0.20, Business Impact: 0.25, Bug Bounty Value: 0.15, Correlation Bonus: 0.15). Domain classification rules (payment/auth/api/www/dev tiers). Correlation rules and confidence thresholds. Retest intervals by severity. Notification thresholds. Dupe probability estimates per finding type. Color constants using colorama.",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/finding_db.py (~1000 lines): JSON-based findings database class (FindingDB). Store findings with metadata (timestamps, status, retest_history, correlation_ids). Query methods: by_severity(), by_domain(), by_type(), by_status(), by_date_range(). Track finding lifecycle: new/reported/fixed/not-fixed. Import from Monster JSON output format (parse report_metadata and findings[] array). Export for reporting. Deduplication engine (fingerprint-based using finding_type+url+evidence hash). Support for composite/escalated findings from correlation.",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/main.py (~800 lines): Master CLI controller using argparse with subcommands: correlate, retest, prioritize, plan, diff, full. Each subcommand has appropriate arguments (--input, --db, --output, --webhook, --format, etc.). Banner display with colorama. Pipeline orchestration for 'full' command (correlate -> prioritize -> plan -> report). Progress indicators and timing. Error handling with colored output."
+  ],
+  "acceptance_criteria": [
+    "Running 'python -m super_monster --help' shows all subcommands with descriptions",
+    "Running 'python -m super_monster --version' shows 'Super Monster v1.0.0'",
+    "FindingDB can import a Monster JSON report file and store findings",
+    "FindingDB can query findings by severity, domain, type, status, date range",
+    "FindingDB deduplication correctly identifies duplicate findings by fingerprint",
+    "Config module exports all scoring weights, domain tiers, and thresholds as documented constants",
+    "All modules import without errors: python -c \"from super_monster import config, finding_db, main\""
+  ],
+  "verification": [
+    "python -m super_monster --help",
+    "python -m super_monster --version",
+    "python -c \"from super_monster.finding_db import FindingDB; db = FindingDB(); print('FindingDB OK')\"",
+    "python -c \"from super_monster.config import SCORING_WEIGHTS, DOMAIN_TIERS; print('Config OK')\""
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

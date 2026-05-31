@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Create notification.py (alert system), reporter.py (super report generator), and update the main README.md. The notification module sends alerts on important events. The reporter generates elite-level reports with correlation maps, attack path visualizations, and bug bounty optimization. Also create super_monster/README.md documentation and update the main Bug-Bounty README.md to mark Super Monster as Ready.",
+  "status": "pending",
+  "steps": [
+    "Create /projects/sandbox/Bug-Bounty/super_monster/notification.py (~600 lines): NotificationManager class. Channels: console (colored print), file_log (append to log file), webhook (POST JSON to Discord/Slack/Telegram URL using urllib.request). Event types: NEW_CRITICAL (new CRITICAL/HIGH finding), FINDING_FIXED (previously found now gone), NEW_SUBDOMAIN (new subdomain appeared), STALE_FINDING (finding persists > 30 days), ATTACK_CHAIN_DETECTED (new attack chain found). Notification formatting per channel (markdown for webhook, colored for console, plain for file). Configurable thresholds from config.py. Batch notifications to avoid spam.",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/reporter.py (~1500 lines): SuperReporter class. Generate multiple report formats: JSON (machine-readable full data), Markdown (human-readable with tables), HTML (styled dark-theme interactive). Report sections: correlation maps (ASCII graph showing connections between findings as edges), attack path visualization (tree showing exploitation steps), priority-ranked finding list (from prioritizer), retest history timeline (showing finding lifecycle), business impact assessment (aggregate risk per domain/tier), bug bounty optimization recommendations (what to submit first), HackerOne/Bugcrowd report templates with correlation context and PoC. Color-coded severity badges. Statistics dashboard section.",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/README.md: Full documentation with banner, feature list, installation, usage examples for every subcommand, output examples, architecture explanation, configuration guide.",
+    "Update /projects/sandbox/Bug-Bounty/README.md: Change Super Monster entry in the tools table from ':construction: Coming Soon' to ':white_check_mark: Ready' and add link [Super Monster](super_monster/README.md). Update the section below the table to have full description instead of 'Coming Soon'. Add super_monster/ to the project structure section."
+  ],
+  "acceptance_criteria": [
+    "NotificationManager can send console notifications with colored output",
+    "NotificationManager can write to a log file",
+    "NotificationManager formats webhook payloads correctly for Discord/Slack",
+    "SuperReporter generates JSON report with all sections (correlations, priorities, attack paths)",
+    "SuperReporter generates Markdown report with ASCII correlation maps and tables",
+    "SuperReporter generates HTML report with dark theme and styled sections",
+    "super_monster/README.md exists with full documentation and usage examples",
+    "Main README.md shows Super Monster as Ready with link to documentation",
+    "Main README.md project structure section includes super_monster/ directory",
+    "python -m super_monster full --input ./monster_output/reports --output ./test_full_output runs the complete pipeline without error",
+    "The full pipeline generates output files in the specified output directory"
+  ],
+  "verification": [
+    "python -c \"from super_monster.notification import NotificationManager; print('Notification OK')\"",
+    "python -c \"from super_monster.reporter import SuperReporter; print('Reporter OK')\"",
+    "python -m super_monster full --input ./monster_output/reports --output ./test_full_output",
+    "python -c \"import pathlib; assert pathlib.Path('/projects/sandbox/Bug-Bounty/super_monster/README.md').exists()\"",
+    "grep -q 'Ready' /projects/sandbox/Bug-Bounty/README.md"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

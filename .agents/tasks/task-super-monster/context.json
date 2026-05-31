@@ -1,0 +1,25 @@
+{
+  "project_type": "Python security assessment toolkit (Bug Bounty Arsenal)",
+  "language": "Python 3.11+",
+  "build_system": "pip with requirements.txt (just colorama dependency)",
+  "test_framework": "No formal test framework - verification via python -m module execution",
+  "build_command": "pip install colorama && python -c \"import super_monster\"",
+  "test_command": "python -m super_monster --help",
+  "verification_instructions": "1. Run 'python -m super_monster --help' to verify CLI works. 2. Run 'python -m super_monster full --input ./monster_output/reports --output ./super_output' to verify pipeline. 3. Verify all imports work with 'python -c \"from super_monster import correlator, retester, prioritizer, finding_db, attack_planner, diff_engine, notification, reporter\"'",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "pip install colorama (only dependency)",
+  "environment_constraints": "OPEN_INTERNET network mode. Python 3.11 available. No external APIs - all AI/scoring is rule-based. Pure Python standard library + colorama only.",
+  "contribution_requirements": "Professional colored terminal output using colorama. All output must be actionable for bug bounty. Must work with python -m super_monster. Must integrate with Monster's JSON output format.",
+  "key_patterns": "Monster uses dataclass Finding(finding_type, severity, title, description, url, evidence, remediation, cvss_score, cwe_id). Monster JSON output has report_metadata, executive_summary, findings[], recon_summary sections. Uses ColorOutput class from utils for colored terminal output. CLI uses argparse with subcommands. Modules are standalone .py files in package directory with __main__.py entry point.",
+  "relevant_files": [
+    "monster/__init__.py",
+    "monster/__main__.py",
+    "monster/main.py",
+    "monster/vuln_scanner.py",
+    "monster/config.py",
+    "monster/report_generator.py",
+    "monster_output/reports/monster_report_coupang.tw_20260531_000610.json",
+    "README.md"
+  ],
+  "directory_structure": "Bug-Bounty/ contains: README.md (main), requirements.txt, monster/ (23k lines, web scanner), apk_analyzer/ (4.5k lines, mobile analysis), monster_output/reports/ (sample JSON/MD/HTML reports). New super_monster/ package to be created at same level as monster/."
+}
