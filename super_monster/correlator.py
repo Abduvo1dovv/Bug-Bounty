@@ -14,6 +14,7 @@ from typing import List, Optional
 
 from .smart_scanner import Finding
 from .config import SEVERITY_ORDER
+from .domain_classifier import DomainClassifier
 
 
 @dataclass
@@ -55,6 +56,10 @@ class SmartCorrelator:
 
     # Finding types that are informational-only (never chain two of these)
     INFORMATIONAL_TYPES = ("server_disclosure",)
+
+    def __init__(self):
+        """Initialize correlator with a DomainClassifier instance."""
+        self._classifier = DomainClassifier()
 
     def correlate(self, verified_findings: List[Finding]) -> List[Chain]:
         """
@@ -135,42 +140,10 @@ class SmartCorrelator:
         """
         Determine domain type from the domain name.
 
-        Uses prefix matching similar to the DomainClassifier.
+        Delegates to DomainClassifier to ensure consistent classification
+        rules across the entire codebase.
         """
-        domain_lower = domain.lower()
-
-        type_prefixes = {
-            "payment": ["payment.", "pay.", "checkout.", "billing."],
-            "auth": ["auth.", "login.", "sso.", "id.", "member.", "mauth."],
-            "api": ["api.", "rs-open-api.", "cmapi.", "cart-front-api."],
-            "admin": ["admin.", "manage.", "dashboard.", "partners."],
-            "cdn": ["cdn.", "static.", "assets.", "media.", "img."],
-            "web": ["www.", "m.", "shop.", "pages.", "review."],
-        }
-
-        type_keywords = {
-            "payment": ["payment", "pay", "checkout", "billing"],
-            "auth": ["auth", "login", "sso", "oauth", "session", "member"],
-            "api": ["api", "rest", "graphql", "gateway", "service"],
-            "admin": ["admin", "manage", "dashboard", "panel"],
-            "cdn": ["cdn", "static", "assets", "media"],
-            "web": ["www", "web", "shop", "store"],
-        }
-
-        # Check prefixes first
-        for dtype, prefixes in type_prefixes.items():
-            for prefix in prefixes:
-                if domain_lower.startswith(prefix):
-                    return dtype
-
-        # Fallback to keyword matching
-        first_part = domain_lower.split(".")[0]
-        for dtype, keywords in type_keywords.items():
-            for keyword in keywords:
-                if keyword in first_part:
-                    return dtype
-
-        return "web"
+        return self._classifier.classify_domain(domain)
 
     def _check_cors_data_theft(self, domain_findings: List[Finding]) -> Optional[Chain]:
         """

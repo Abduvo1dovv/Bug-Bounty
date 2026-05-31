@@ -19,6 +19,7 @@ from typing import List
 from .config import Colors, SEVERITY_ORDER, OUTPUT_DIR
 from .smart_scanner import Finding
 from .correlator import Chain
+from .domain_classifier import DomainClassifier
 
 
 class Reporter:
@@ -32,19 +33,9 @@ class Reporter:
     # Domain types considered sensitive (findings here are more reportable)
     SENSITIVE_DOMAIN_TYPES = ("payment", "auth", "api", "admin")
 
-    # Domain type keywords for classification
-    _TYPE_PREFIXES = {
-        "payment": ["payment.", "pay.", "checkout.", "billing."],
-        "auth": ["auth.", "login.", "sso.", "id.", "member.", "mauth."],
-        "api": ["api.", "rs-open-api.", "cmapi.", "cart-front-api."],
-        "admin": ["admin.", "manage.", "dashboard.", "partners."],
-        "cdn": ["cdn.", "static.", "assets.", "media.", "img."],
-        "web": ["www.", "m.", "shop.", "pages.", "review."],
-    }
-
     def __init__(self):
-        """Initialize reporter."""
-        pass
+        """Initialize reporter with a DomainClassifier instance."""
+        self._classifier = DomainClassifier()
 
     def generate_report(
         self,
@@ -97,30 +88,13 @@ class Reporter:
         }
 
     def _get_domain_type(self, domain: str) -> str:
-        """Determine domain type from domain name."""
-        domain_lower = domain.lower()
+        """
+        Determine domain type from domain name.
 
-        for dtype, prefixes in self._TYPE_PREFIXES.items():
-            for prefix in prefixes:
-                if domain_lower.startswith(prefix):
-                    return dtype
-
-        # Keyword fallback
-        first_part = domain_lower.split(".")[0]
-        type_keywords = {
-            "payment": ["payment", "pay", "checkout", "billing"],
-            "auth": ["auth", "login", "sso", "oauth", "session"],
-            "api": ["api", "rest", "graphql", "gateway"],
-            "admin": ["admin", "manage", "dashboard"],
-            "cdn": ["cdn", "static", "assets", "media"],
-            "web": ["www", "web", "shop", "store"],
-        }
-        for dtype, keywords in type_keywords.items():
-            for keyword in keywords:
-                if keyword in first_part:
-                    return dtype
-
-        return "web"
+        Delegates to DomainClassifier to ensure consistent classification
+        rules across the entire codebase.
+        """
+        return self._classifier.classify_domain(domain)
 
     def _categorize_findings(self, findings: list) -> dict:
         """

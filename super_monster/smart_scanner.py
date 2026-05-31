@@ -12,7 +12,6 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
-import ssl
 import json
 import socket
 import threading
@@ -24,10 +23,12 @@ from .config import (
     REQUEST_TIMEOUT,
     RATE_LIMIT_DELAY,
     MAX_THREADS,
+    MAX_SCAN_TIME,
     SCAN_TESTS_PER_TYPE,
     USER_AGENTS,
 )
 from .domain_classifier import DomainClassifier
+from .http_utils import make_request as _shared_make_request, create_ssl_context
 
 
 @dataclass
@@ -57,14 +58,12 @@ class SmartScanner:
     minimize false positives.
     """
 
-    def __init__(self):
+    def __init__(self, insecure: bool = True):
         """Initialize the scanner with rate limiting state."""
         self._classifier = DomainClassifier()
         self._rate_limit_lock = threading.Lock()
         self._host_timestamps = {}
-        self._ssl_context = ssl.create_default_context()
-        self._ssl_context.check_hostname = False
-        self._ssl_context.verify_mode = ssl.CERT_NONE
+        self._ssl_context = create_ssl_context(insecure=insecure)
         self._findings_lock = threading.Lock()
 
     def _get_user_agent(self) -> str:
@@ -90,40 +89,20 @@ class SmartScanner:
         data: bytes = None,
     ) -> tuple:
         """
-        Make an HTTP request using urllib.
+        Make an HTTP request using the shared http_utils helper.
 
         Returns:
             Tuple of (status_code, response_headers_dict, body_str).
             Returns (0, {}, "") on any error.
         """
-        if timeout is None:
-            timeout = REQUEST_TIMEOUT
-
-        if headers is None:
-            headers = {}
-
-        if "User-Agent" not in headers:
-            headers["User-Agent"] = self._get_user_agent()
-
-        try:
-            req = urllib.request.Request(
-                url, headers=headers, method=method, data=data
-            )
-            response = urllib.request.urlopen(
-                req, timeout=timeout, context=self._ssl_context
-            )
-            status_code = response.getcode()
-            resp_headers = dict(response.headers)
-            body = response.read().decode("utf-8", errors="replace")
-            return (status_code, resp_headers, body)
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = ""
-            return (e.code, dict(e.headers) if e.headers else {}, body)
-        except (urllib.error.URLError, socket.timeout, OSError, Exception):
-            return (0, {}, "")
+        return _shared_make_request(
+            url,
+            headers=headers,
+            method=method,
+            timeout=timeout,
+            data=data,
+            ssl_context=self._ssl_context,
+        )
 
     def _timestamp(self) -> str:
         """Get current UTC timestamp string."""
@@ -1088,6 +1067,9 @@ class SmartScanner:
         """
         Orchestrate parallel scanning using ThreadPoolExecutor.
 
+        Enforces MAX_SCAN_TIME: stops accepting new results after the
+        global scan timeout is exceeded.
+
         Args:
             domains: Dict mapping domain -> domain_type.
             dry_run: If True, skip actual scanning.
@@ -1110,7 +1092,7 @@ class SmartScanner:
                 for item in domains.items()
             }
 
-            for future in as_completed(futures):
+            for future in as_completed(futures, timeout=MAX_SCAN_TIME):
                 try:
                     results = future.result()
                     if results:

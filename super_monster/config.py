@@ -72,7 +72,11 @@ SCAN_TESTS_PER_TYPE = {
         "cors",
         "cookie_security",
         "hsts",
-        "session_fixation",
+        # session_fixation removed: the check compares two unauthenticated GETs
+        # and flags unchanged cookies, which is expected server behavior. Real
+        # session fixation detection requires a login-state transition that
+        # cannot be tested without credentials. Its 0.6 confidence also falls
+        # below the 0.80 verification threshold, wasting scan time.
         "server_disclosure",
     ],
     "api": [

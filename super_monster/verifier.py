@@ -11,7 +11,6 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
-import ssl
 import json
 import socket
 import re
@@ -27,6 +26,7 @@ from .config import (
 )
 from .smart_scanner import Finding
 from .domain_classifier import DomainClassifier
+from .http_utils import make_request as _shared_make_request, create_ssl_context
 
 
 class Verifier:
@@ -38,12 +38,10 @@ class Verifier:
     to confirm the finding is real and exploitable.
     """
 
-    def __init__(self):
+    def __init__(self, insecure: bool = True):
         """Initialize the verifier."""
         self._classifier = DomainClassifier()
-        self._ssl_context = ssl.create_default_context()
-        self._ssl_context.check_hostname = False
-        self._ssl_context.verify_mode = ssl.CERT_NONE
+        self._ssl_context = create_ssl_context(insecure=insecure)
 
     def _make_request(
         self,
@@ -54,41 +52,20 @@ class Verifier:
         data: bytes = None,
     ) -> tuple:
         """
-        Make an HTTP request using urllib.
+        Make an HTTP request using the shared http_utils helper.
 
         Returns:
             Tuple of (status_code, response_headers_dict, body_str).
             Returns (0, {}, "") on any error.
         """
-        if timeout is None:
-            timeout = REQUEST_TIMEOUT
-
-        if headers is None:
-            headers = {}
-
-        if "User-Agent" not in headers:
-            import random
-            headers["User-Agent"] = random.choice(USER_AGENTS)
-
-        try:
-            req = urllib.request.Request(
-                url, headers=headers, method=method, data=data
-            )
-            response = urllib.request.urlopen(
-                req, timeout=timeout, context=self._ssl_context
-            )
-            status_code = response.getcode()
-            resp_headers = dict(response.headers)
-            body = response.read().decode("utf-8", errors="replace")
-            return (status_code, resp_headers, body)
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = ""
-            return (e.code, dict(e.headers) if e.headers else {}, body)
-        except (urllib.error.URLError, socket.timeout, OSError, Exception):
-            return (0, {}, "")
+        return _shared_make_request(
+            url,
+            headers=headers,
+            method=method,
+            timeout=timeout,
+            data=data,
+            ssl_context=self._ssl_context,
+        )
 
     def verify_finding(self, finding: Finding) -> tuple:
         """
@@ -139,6 +116,7 @@ class Verifier:
 
         Tests with multiple origins to confirm the reflection is
         consistent and not a fluke. Checks wildcard vs actual reflection.
+        Uses finding.url to test the exact path where CORS was found.
 
         Returns:
             Tuple of (is_verified, confidence, details).
@@ -153,9 +131,11 @@ class Verifier:
         has_credentials = False
         details_parts = []
 
+        # Use the original finding URL so path-specific CORS is verified correctly
+        url = finding.url or f"https://{finding.domain}/"
+
         for origin in test_origins:
             time.sleep(VERIFICATION_DELAY)
-            url = f"https://{finding.domain}/"
             headers = {"Origin": origin}
             status, resp_headers, body = self._make_request(url, headers=headers)
 

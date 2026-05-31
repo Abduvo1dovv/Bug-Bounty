@@ -26,6 +26,7 @@ from super_monster.smart_scanner import SmartScanner, Finding
 from super_monster.verifier import Verifier
 from super_monster.correlator import SmartCorrelator
 from super_monster.reporter import Reporter
+from super_monster.http_utils import print_insecure_warning
 
 
 # =============================================================================
@@ -95,12 +96,18 @@ def cmd_scan(args) -> int:
     # Start timing
     start_time = time.time()
 
+    # Insecure mode warning
+    insecure = getattr(args, "insecure", True)
+    if insecure:
+        print_insecure_warning()
+        print()
+
     # Scan
     print(f"{c.PROGRESS}[*] Starting adaptive scan...{c.RESET}")
     print(f"    Threads: {args.threads} | Timeout: {args.timeout}s")
     print()
 
-    scanner = SmartScanner()
+    scanner = SmartScanner(insecure=insecure)
     raw_findings = scanner.scan_all_domains(classified, dry_run=False)
 
     raw_count = len(raw_findings)
@@ -108,7 +115,7 @@ def cmd_scan(args) -> int:
 
     # Verify
     print(f"{c.PROGRESS}[*] Verifying findings (eliminating false positives)...{c.RESET}")
-    verifier = Verifier()
+    verifier = Verifier(insecure=insecure)
     verified_findings = verifier.verify_all(raw_findings)
 
     false_positives_filtered = raw_count - len(verified_findings)
@@ -490,6 +497,14 @@ def main():
     )
     scan_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose output"
+    )
+    scan_parser.add_argument(
+        "--insecure", action="store_true", default=True,
+        help="Disable TLS certificate verification (default: enabled for bug bounty scanning)"
+    )
+    scan_parser.add_argument(
+        "--no-insecure", action="store_false", dest="insecure",
+        help="Enable TLS certificate verification (strict mode)"
     )
 
     # analyze subcommand
