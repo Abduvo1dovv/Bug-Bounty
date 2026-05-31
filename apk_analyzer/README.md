@@ -1,3 +1,7 @@
+**[<< Back to Main README](../README.md)**
+
+---
+
 # APK Deep Analyzer v2.0
 
 Advanced APK security scanner with **DEX binary parsing**, **vulnerability detection**,
@@ -153,3 +157,7 @@ Priority findings for reports:
 Use this tool only on applications you have authorization to test
 (HackerOne, Bugcrowd, etc.). Report findings responsibly according
 to the program's scope and disclosure policy.
+
+---
+
+**[<< Back to Main README](../README.md)**

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.apk
+monster_output/
+*_output/
+*_results/
+*_report/
+*.report.*
+session.json
+cookies.txt
+.monsterrc
