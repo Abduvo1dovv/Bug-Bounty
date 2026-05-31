@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Delete the existing super_monster/ directory completely and create the new v2 foundation: __init__.py, __main__.py, config.py with domain classification rules, methodology config, and color constants.",
+  "status": "in_progress",
+  "steps": [
+    "Delete the entire /projects/sandbox/Bug-Bounty/super_monster/ directory (rm -rf)",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/ directory fresh",
+    "Create __init__.py with VERSION='2.0.0', brief docstring about Super Monster v2 being an elite adaptive bug bounty scanner with inline verification",
+    "Create __main__.py with standard entry point pattern (import main, call main())",
+    "Create config.py (~400 lines) containing: DOMAIN_TYPES dict mapping domain categories (payment, auth, api, admin, cdn, web) to keyword lists and prefix patterns. SCAN_TESTS_PER_TYPE dict mapping each domain type to which tests to run. SEVERITY_RULES for what severity different verified findings get on different domain types. TIMEOUTS (10s per request), RATE_LIMITS (1s between requests to same host), MAX_THREADS (5), colorama Colors class with fallback."
+  ],
+  "acceptance_criteria": [
+    "Old super_monster/ directory is completely removed",
+    "New super_monster/__init__.py exists with VERSION='2.0.0'",
+    "New super_monster/__main__.py exists and is importable",
+    "New super_monster/config.py exists with DOMAIN_TYPES, SCAN_TESTS_PER_TYPE, SEVERITY_RULES, TIMEOUTS, Colors class",
+    "Running 'python -c \"from super_monster import VERSION; print(VERSION)\"' outputs 2.0.0"
+  ],
+  "verification": [
+    "python -c \"from super_monster import VERSION; print(VERSION)\"",
+    "python -c \"from super_monster.config import DOMAIN_TYPES, SCAN_TESTS_PER_TYPE, Colors; print('OK')\""
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Implement the core scanning and verification modules: domain_classifier.py, smart_scanner.py, and verifier.py. These are the heart of v2 - adaptive scanning with inline verification that eliminates false positives.",
+  "status": "pending",
+  "steps": [
+    "Create /projects/sandbox/Bug-Bounty/super_monster/domain_classifier.py (~300 lines): DomainClassifier class that takes a list of domains/subdomains and classifies each into categories (payment, auth, api, admin, cdn, web) based on prefix matching and keyword patterns from config.py. Method classify_domains(domains) returns dict mapping each domain to its type. Method get_tests_for_domain(domain) returns which tests to run based on type. Include smart fallback classification using response headers if prefix matching is ambiguous.",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/smart_scanner.py (~1200 lines): SmartScanner class that is the adaptive scanning engine. Methods: scan_domain(domain, domain_type) runs only RELEVANT tests per domain type. Tests include: check_cors(url) - sends request with Origin:evil.com, checks reflection. check_csp(url) - checks Content-Security-Policy header for unsafe-inline/unsafe-eval. check_hsts(url) - checks Strict-Transport-Security presence. check_cookie_security(url) - checks Set-Cookie flags (Secure, HttpOnly, SameSite). check_clickjacking(url) - checks X-Frame-Options/CSP frame-ancestors. check_api_exposure(url) - checks /swagger, /graphql, /api-docs with response validation. check_403_bypass(url) - tries path encoding bypasses, ONLY reports if response actually changes. check_open_redirect(url) - checks redirect params. check_server_disclosure(url) - checks Server/X-Powered-By headers. Each check method returns a Finding dataclass or None. Uses ThreadPoolExecutor(max_workers=5) for parallel scanning. 10s timeout per request. 1s rate limit between requests to same host. Tracks timing per domain.",
+    "Create /projects/sandbox/Bug-Bounty/super_monster/verifier.py (~600 lines): Verifier class that double-checks every finding. Method verify_finding(finding) dispatches to type-specific verifiers. verify_cors(finding) - re-sends with multiple evil origins, confirms reflection is real (not wildcard *). verify_403_bypass(finding) - compares original 403 response body length with bypass response body length, only confirms if BOTH status code changed AND body is meaningfully different. verify_api_exposure(finding) - confirms response is actual API data (JSON with fields) not an error page or redirect. verify_header_finding(finding) - only reports missing HSTS/CSP on business-critical domains (payment, auth, api), skips cdn/static domains. verify_cookie_finding(finding) - confirms cookie is session-related (name contains session/token/auth), not analytics cookie. Each verifier returns (is_verified: bool, confidence: float, details: str)."
+  ],
+  "acceptance_criteria": [
+    "domain_classifier.py correctly classifies domains like payment.tw.coupang.com as 'payment', mauth.tw.coupang.com as 'auth', rs-open-api.tw.coupang.com as 'api'",
+    "smart_scanner.py has all check methods that return structured Finding objects or None",
+    "smart_scanner.py uses threading for parallel domain scanning",
+    "verifier.py has type-specific verification that filters false positives (403 bypass must check body difference, CORS must check non-wildcard reflection, API exposure must check for actual JSON data)",
+    "All modules are importable: python -c \"from super_monster.domain_classifier import DomainClassifier; from super_monster.smart_scanner import SmartScanner; from super_monster.verifier import Verifier; print('OK')\"",
+    "SmartScanner skips irrelevant tests (e.g., does NOT run GraphQL check on cdn domains)"
+  ],
+  "verification": [
+    "python -c \"from super_monster.domain_classifier import DomainClassifier; dc = DomainClassifier(); result = dc.classify_domains(['payment.tw.coupang.com','cdn.tw.coupang.com','api.tw.coupang.com']); print(result); assert result['payment.tw.coupang.com'] == 'payment'; assert result['cdn.tw.coupang.com'] == 'cdn'; assert result['api.tw.coupang.com'] == 'api'\"",
+    "python -c \"from super_monster.smart_scanner import SmartScanner; from super_monster.verifier import Verifier; print('All imports OK')\""
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -1,0 +1,20 @@
+{
+  "project_type": "Python CLI security toolkit (bug bounty arsenal)",
+  "language": "Python 3.11+",
+  "build_system": "pip with requirements.txt (only colorama dependency)",
+  "test_framework": "No formal test framework - CLI --dry-run and --help for validation",
+  "build_command": "pip install colorama && python -m super_monster --help",
+  "test_command": "python -m super_monster scan --target example.com --dry-run",
+  "verification_instructions": "1. Run python -m super_monster --help to verify CLI works. 2. Run python -m super_monster scan --target example.com --dry-run to verify dry-run mode works without network. 3. Verify all imports resolve correctly.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "pip install colorama",
+  "environment_constraints": "OPEN_INTERNET network mode - full access available. Python 3.11 default.",
+  "contribution_requirements": "Pure Python + colorama only. No external tool dependencies. Module runnable via python -m super_monster.",
+  "key_patterns": "Uses colorama for terminal colors with fallback to empty strings. Module entry via __main__.py calling main(). CLI uses argparse with subcommands. Each module is self-contained with clear docstrings.",
+  "relevant_files": [
+    "super_monster/ (entire directory - DELETE and recreate)",
+    "README.md (update to reflect v2)",
+    "requirements.txt (already has colorama)"
+  ],
+  "directory_structure": "Bug-Bounty/ root with monster/, super_monster/, apk_analyzer/ as peer tools. Each tool is a Python package with __main__.py entry point."
+}

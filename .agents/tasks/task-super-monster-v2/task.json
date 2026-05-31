@@ -1,0 +1,7 @@
+{
+  "task_id": "task-super-monster-v2",
+  "task_description": "Delete existing Super Monster v1 and rebuild from scratch as Super Monster v2 - an elite adaptive bug bounty scanner with inline verification, zero false positives, and fast execution. The v1 was a 17K-line post-processor that produced 0 useful correlation chains from 957 findings over 6 hours. The v2 must actively scan, verify every finding inline, and complete 47 domains in under 30 minutes.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}
