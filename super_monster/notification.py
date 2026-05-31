@@ -136,6 +136,7 @@ class NotificationConfig:
     slack_webhook: str = ""
     telegram_webhook: str = ""
     telegram_chat_id: str = ""
+    redact_sensitive: bool = False
 
     @classmethod
     def from_env(cls) -> "NotificationConfig":
@@ -212,6 +213,10 @@ class NotificationManager:
             if self.config.batch_enabled and event.severity not in ("CRITICAL", "HIGH"):
                 self.add_to_batch(event)
                 return True
+
+            # Apply redaction if enabled before dispatching to webhook channels
+            if self.config.redact_sensitive:
+                event = self._redact_event(event)
 
             results = self._dispatch_to_channels(event)
             success = any(results.values())
@@ -332,6 +337,16 @@ class NotificationManager:
 
     def _send_webhook(self, event: NotificationEvent, url: str, platform: str) -> bool:
         """Send notification via webhook POST to the specified platform."""
+        # Validate webhook URL scheme - warn on non-HTTPS
+        parsed_url = urllib.parse.urlparse(url)
+        if parsed_url.scheme.lower() != "https":
+            print(
+                f"{Fore.YELLOW}[WARNING]{Style.RESET_ALL} Webhook URL uses "
+                f"'{parsed_url.scheme}://' scheme instead of 'https://'. "
+                f"Sensitive finding data may be transmitted insecurely.",
+                file=sys.stderr,
+            )
+
         try:
             if platform == "discord":
                 payload = self._build_discord_payload(event)
@@ -347,6 +362,60 @@ class NotificationManager:
             )
         except Exception:
             return False
+
+    @staticmethod
+    def _redact_text(text: str) -> str:
+        """
+        Redact potential tokens, API keys, and secrets from text.
+
+        Replaces patterns that look like credentials with [REDACTED].
+        """
+        import re as _re
+        if not text:
+            return text
+
+        # API keys and tokens (long alphanumeric strings)
+        text = _re.sub(
+            r'(api[_-]?key|token|secret|password|auth|bearer|access[_-]?key)\s*[=:]\s*[\w\-./+]{12,}',
+            r'\1=[REDACTED]',
+            text,
+            flags=_re.IGNORECASE,
+        )
+        # Bearer tokens
+        text = _re.sub(
+            r'(Bearer\s+)[\w\-./+]{20,}',
+            r'\1[REDACTED]',
+            text,
+            flags=_re.IGNORECASE,
+        )
+        # AWS-style keys
+        text = _re.sub(r'AKIA[0-9A-Z]{16}', '[REDACTED-AWS-KEY]', text)
+        # Generic long hex/base64 strings that look like secrets (40+ chars)
+        text = _re.sub(r'[a-f0-9]{40,}', '[REDACTED-HASH]', text)
+
+        return text
+
+    def _redact_event(self, event: NotificationEvent) -> NotificationEvent:
+        """
+        Create a redacted copy of the event for webhook delivery.
+
+        Redacts potential tokens/keys from message, title, and details.
+        """
+        redacted = NotificationEvent(
+            event_type=event.event_type,
+            severity=event.severity,
+            title=self._redact_text(event.title),
+            message=self._redact_text(event.message),
+            timestamp=event.timestamp,
+            finding_id=event.finding_id,
+            domain=event.domain,
+            details={
+                k: self._redact_text(str(v)) if isinstance(v, str) else v
+                for k, v in event.details.items()
+            },
+            metadata=event.metadata.copy(),
+        )
+        return redacted
 
     def _format_console_message(self, event: NotificationEvent) -> str:
         """Format notification for colored console output."""

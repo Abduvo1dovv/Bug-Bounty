@@ -438,6 +438,48 @@ class RetestHTTPClient:
 
         return req
 
+    @staticmethod
+    def _validate_url(url: str) -> Optional[str]:
+        """
+        Validate that a URL uses an allowed scheme (http or https only).
+
+        Returns None if valid, or an error message string if invalid.
+        Blocks file://, gopher://, ftp://, data://, and other dangerous schemes.
+        Logs a warning for RFC 1918 private ranges but still allows them
+        (bug bounty targets may be internal).
+        """
+        if not url or not isinstance(url, str):
+            return "Empty or invalid URL"
+
+        parsed = urlparse(url)
+        scheme = (parsed.scheme or "").lower()
+
+        # Only allow http and https schemes
+        allowed_schemes = ("http", "https")
+        if scheme not in allowed_schemes:
+            return (
+                f"Blocked URL with disallowed scheme '{scheme}://'. "
+                f"Only http:// and https:// are permitted."
+            )
+
+        # Warn (but allow) private/internal IP ranges
+        hostname = (parsed.hostname or "").lower()
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                import sys as _sys
+                print(
+                    f"[WARNING] Retester: URL targets private/internal address "
+                    f"({hostname}). Proceeding as this may be an internal target.",
+                    file=_sys.stderr,
+                )
+        except ValueError:
+            # Not an IP address literal, hostname is fine
+            pass
+
+        return None
+
     def get(self, url: str, headers: Dict[str, str] = None,
             follow_redirects: bool = True) -> Dict[str, Any]:
         """
@@ -461,6 +503,21 @@ class RetestHTTPClient:
                 "final_url": str,
             }
         """
+        # Validate URL scheme before making any request (SSRF protection)
+        validation_error = self._validate_url(url)
+        if validation_error:
+            return {
+                "status_code": 0,
+                "headers": {},
+                "body": "",
+                "url": url,
+                "elapsed_ms": 0.0,
+                "error": validation_error,
+                "redirected": False,
+                "final_url": url,
+                "ssl_info": {},
+            }
+
         self._enforce_rate_limit()
         self._request_count += 1
 

@@ -23,6 +23,7 @@ import json
 import hashlib
 import os
 import re
+import sys
 import time
 import uuid
 from collections import defaultdict
@@ -1404,6 +1405,13 @@ class CorrelationEngine:
 
             # Create correlations between different domains sharing tech
             domain_list = list(domain_groups.keys())
+            if len(domain_list) > 10:
+                print(
+                    f"{Fore.YELLOW}[WARNING]{Style.RESET_ALL} Tech stack correlation "
+                    f"for '{tech_name}': {len(domain_list)} domains found but only "
+                    f"first 10 will be analyzed. Results may be incomplete.",
+                    file=sys.stderr,
+                )
             for i in range(min(len(domain_list), 10)):
                 for j in range(i + 1, min(len(domain_list), 10)):
                     d1_findings = domain_groups[domain_list[i]][:3]
@@ -1458,6 +1466,20 @@ class CorrelationEngine:
                 continue
 
             # Match within same domain or related domains
+            if len(findings_type1) > 10:
+                print(
+                    f"{Fore.YELLOW}[WARNING]{Style.RESET_ALL} Escalation path "
+                    f"analysis for '{type1}': {len(findings_type1)} findings found "
+                    f"but only first 10 will be analyzed. Results may be incomplete.",
+                    file=sys.stderr,
+                )
+            if len(findings_type2) > 10:
+                print(
+                    f"{Fore.YELLOW}[WARNING]{Style.RESET_ALL} Escalation path "
+                    f"analysis for '{type2}': {len(findings_type2)} findings found "
+                    f"but only first 10 will be analyzed. Results may be incomplete.",
+                    file=sys.stderr,
+                )
             for f1 in findings_type1[:10]:
                 for f2 in findings_type2[:10]:
                     if f1.id == f2.id:

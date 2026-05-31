@@ -350,7 +350,10 @@ class FindingDB:
 
     def save(self) -> bool:
         """
-        Save the database to disk with atomic write.
+        Save the database to disk with atomic write and file locking.
+
+        Uses fcntl.flock() advisory locking to prevent concurrent write races.
+        Falls back gracefully on systems where fcntl is not available (Windows).
 
         Returns:
             True if saved successfully, False otherwise.
@@ -366,10 +369,23 @@ class FindingDB:
             "findings": {fid: f.to_dict() for fid, f in self.findings.items()},
         }
 
-        # Atomic write: write to temp file then rename
+        # Atomic write: write to temp file then rename, with advisory file locking
         temp_path = self.db_path + ".tmp"
+        lock_path = self.db_path + ".lock"
+        lock_file = None
         try:
             os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+
+            # Acquire advisory file lock to prevent concurrent write races
+            try:
+                import fcntl
+                lock_file = open(lock_path, "w")
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                # fcntl not available (e.g., Windows) or lock file error;
+                # proceed without locking
+                lock_file = None
+
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
 
@@ -384,6 +400,18 @@ class FindingDB:
                 except OSError:
                     pass
             return False
+        finally:
+            # Release file lock
+            if lock_file is not None:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+                try:
+                    lock_file.close()
+                except OSError:
+                    pass
 
     # =========================================================================
     # CRUD OPERATIONS

@@ -19,6 +19,7 @@ import json
 import os
 import random
 import re
+import shlex
 import sys
 import time
 import uuid
@@ -776,11 +777,18 @@ class AttackPlanner:
             finding_type = edge_dict.get("finding_type", "")
             tool_info = TOOL_RECOMMENDATIONS.get(finding_type, {})
 
-            # Generate curl command
+            # Generate curl command with shell-safe escaping
             url = edge_dict.get("finding_url", "https://target.com")
             curl_template = tool_info.get("curl_template", f"curl -s '{url}'")
-            command = curl_template.replace("{url}", url).replace("{param}", "param")
-            command = command.replace("{subdomain}", urlparse(url).netloc if url else "target")
+
+            # Use shlex.quote() to prevent shell injection from finding data
+            safe_url = shlex.quote(url)
+            safe_param = shlex.quote("param")
+            safe_subdomain = shlex.quote(urlparse(url).netloc if url else "target")
+
+            command = curl_template.replace("'{url}'", safe_url).replace("{url}", safe_url)
+            command = command.replace("'{param}'", safe_param).replace("{param}", safe_param)
+            command = command.replace("{subdomain}", safe_subdomain)
             command = command.replace("{token}", "SESSION_TOKEN")
             command = command.replace("{other_id}", "2")
 
