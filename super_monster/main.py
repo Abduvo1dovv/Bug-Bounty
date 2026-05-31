@@ -266,6 +266,13 @@ def cmd_retest(args) -> int:
     if db is None:
         return 1
 
+    # Import findings if input specified
+    if hasattr(args, 'input') and args.input:
+        import_stats = _import_findings(db, args.input)
+        if import_stats.get("error"):
+            print_error(import_stats["error"])
+            return 1
+
     if db.count() == 0:
         print_warning("No findings in database.")
         return 0
@@ -445,6 +452,13 @@ def cmd_plan(args) -> int:
     db = _load_database(args)
     if db is None:
         return 1
+
+    # Import findings if input specified
+    if hasattr(args, 'input') and args.input:
+        import_stats = _import_findings(db, args.input)
+        if import_stats.get("error"):
+            print_error(import_stats["error"])
+            return 1
 
     if db.count() == 0:
         print_warning("No findings in database. Import reports first.")
@@ -1122,8 +1136,11 @@ Examples:
         description="Analyze findings for retest scheduling. Shows which findings "
                     "are due for verification based on configured intervals.",
     )
+    p_retest.add_argument("--input", "-i", help="Input directory or file with Monster JSON reports")
     p_retest.add_argument("--db", help=f"Path to findings database (default: {DEFAULT_DB_PATH})")
     p_retest.add_argument("--output", "-o", help="Output directory for retest schedule")
+    p_retest.add_argument("--strategy", choices=["full", "critical_only", "oldest_first", "random_sample"],
+                          default="full", help="Retest strategy (default: full)")
     p_retest.add_argument("--severity", choices=SEVERITY_LEVELS,
                           help="Filter by severity level")
     p_retest.add_argument("--force", action="store_true",
